@@ -22,8 +22,32 @@ class MainApp extends StatelessWidget {
   }
 }
 
-class MainStage extends StatelessWidget {
+class MainStage extends StatefulWidget {
   const MainStage({super.key});
+
+  @override
+  State<MainStage> createState() => _MainStageState();
+}
+
+class _MainStageState extends State<MainStage> {
+  // 创建 AppController 实例（逻辑中枢）
+  late final AppController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = AppController();
+  }
+
+  @override
+  void dispose() {
+    // 释放 ValueNotifier 资源
+    controller.remainingSeconds.dispose();
+    controller.isActive.dispose();
+    controller.isDrawerOpen.dispose();
+    controller.currentDate.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,14 +77,15 @@ class MainStage extends StatelessWidget {
             top: 0,
             left: 0,
             child: Container(
-              color: Colors.grey,
               width: MediaQuery.of(context).size.width * 0.4,
               height: MediaQuery.of(context).size.height * 0.35,
-              padding: const EdgeInsets.all(16),
-              child: const Text(
-                "番茄钟进度条区域",
-                style: TextStyle(fontSize: 28, color: Colors.white),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.5),
+                borderRadius: const BorderRadius.only(
+                  bottomRight: Radius.circular(20),
+                ),
               ),
+              child: UIWidgets(controller: controller),
             ),
           ),
 

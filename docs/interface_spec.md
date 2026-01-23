@@ -42,9 +42,6 @@
 
 为了确保代码能正确加载文件，资源必须存放在项目根目录的 `assets/` 文件夹下并在 `pubspec.yaml` 中注册。
 
-- **背景图**：`assets/background.png` (横屏)
-- **Live2D 模型**：`assets/character/model.model3.json`
-- **占位图**：`assets/Placeholder.png`
-
-### 
-
+- **背景图**：`assets/background.webp` (横屏)
+- **Live2D 模型**：`assets/character/model.model3.json` *(待补充)*
+- **占位图**：`assets/Placeholder.png` *(待补充)*

@@ -57,7 +57,7 @@ class _MainStageState extends State<MainStage> {
         children: [
           // 1. 背景层
           Positioned.fill(
-            child: Image.asset('assets/background.png', fit: BoxFit.cover),
+            child: Image.asset('assets/background.webp', fit: BoxFit.cover),
           ),
 
           // 2. 角色层 (对应组员 B 的模块) [4, 5]

@@ -41,11 +41,8 @@ class _MainStageState extends State<MainStage> {
 
   @override
   void dispose() {
-    // 释放 ValueNotifier 资源
-    controller.remainingSeconds.dispose();
-    controller.isActive.dispose();
-    controller.isDrawerOpen.dispose();
-    controller.currentDate.dispose();
+    // 释放 AppController 中的所有资源
+    controller.dispose();
     super.dispose();
   }
 

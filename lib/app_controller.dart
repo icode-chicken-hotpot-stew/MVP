@@ -18,6 +18,12 @@ class AppController {
   /// 格式化日期字符串
   final ValueNotifier<String> currentDate;
 
+  /// 格式化当前日期
+  static String _formatCurrentDate() {
+    final now = DateTime.now();
+    return '${now.year}年${now.month}月${now.day}日';
+  }
+
   AppController({
     int initialSeconds = 1500,
     bool initialActive = false,
@@ -26,7 +32,7 @@ class AppController {
   }) : remainingSeconds = ValueNotifier<int>(initialSeconds),
        isActive = ValueNotifier<bool>(initialActive),
        isDrawerOpen = ValueNotifier<bool>(initialDrawerOpen),
-       currentDate = ValueNotifier<String>(initialDate ?? "2026年1月19日");
+       currentDate = ValueNotifier<String>(initialDate ?? _formatCurrentDate());
 
   // ============ 逻辑触发接口 ============
   /// 切换计时器的开始与暂停（由组员 C 填充逻辑）

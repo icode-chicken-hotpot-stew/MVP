@@ -3,6 +3,9 @@ library app_controller;
 
 import 'package:flutter/material.dart';
 
+/// 默认番茄钟时长（秒）
+const int kDefaultPomodoroSeconds = 1500;
+
 /// 中枢控制器：管理应用全局状态，通过 ValueNotifier 向 View 层广播
 class AppController {
   // ============ 状态广播接口 ============
@@ -25,7 +28,7 @@ class AppController {
   }
 
   AppController({
-    int initialSeconds = 1500,
+    int initialSeconds = kDefaultPomodoroSeconds,
     bool initialActive = false,
     bool initialDrawerOpen = false,
     String? initialDate,

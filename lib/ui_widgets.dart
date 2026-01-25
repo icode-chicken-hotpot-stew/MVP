@@ -26,7 +26,7 @@ class UIWidgets extends StatelessWidget {
           ValueListenableBuilder<int>(
             valueListenable: controller.remainingSeconds,
             builder: (context, seconds, child) {
-              final double progress = seconds / 1500; // 计算进度百分比
+              final double progress = seconds / kDefaultPomodoroSeconds;
               return LinearProgressIndicator(
                 value: progress,
                 minHeight: 10,
@@ -62,42 +62,43 @@ class UIWidgets extends StatelessWidget {
           const SizedBox(height: 10),
 
           // 3. 日期（左）和时间（右）显示（底部）
-          ValueListenableBuilder<int>(
-            valueListenable: controller.remainingSeconds,
-            builder: (context, seconds, child) {
-              final String timeString =
-                  "${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}";
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // 日期：左侧
-                  ValueListenableBuilder<String>(
-                    valueListenable: controller.currentDate,
-                    builder: (context, dateString, child) {
-                      return Text(
-                        dateString,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.white,
-                        ),
-                      );
-                    },
-                  ),
-                  // 时间：右侧
-                  Text(
+          // 将 Row 作为静态结构，日期和时间分别独立监听各自的状态
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // 日期：左侧 - 独立监听 currentDate
+              ValueListenableBuilder<String>(
+                valueListenable: controller.currentDate,
+                builder: (context, dateString, child) {
+                  return Text(
+                    dateString,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.white,
+                    ),
+                  );
+                },
+              ),
+              // 时间：右侧 - 独立监听 remainingSeconds
+              ValueListenableBuilder<int>(
+                valueListenable: controller.remainingSeconds,
+                builder: (context, seconds, child) {
+                  final String timeString =
+                      "${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}";
+                  return Text(
                     timeString,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Colors.orange,
                     ),
-                  ),
-                ],
-              );
-            },
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),
     );
   }
-} // UI 组件模块 - 负责界面组件和交互（组员 D 维护）
+}

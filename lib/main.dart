@@ -48,6 +48,8 @@ class _MainStageState extends State<MainStage> {
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    
     return Scaffold(
       // 使用 Stack 布局，确保背景、角色、UI 层次分明 [3, 4]
       body: Stack(
@@ -74,10 +76,10 @@ class _MainStageState extends State<MainStage> {
             top: 0,
             left: 0,
             child: Container(
-              width: MediaQuery.of(context).size.width * 0.4,
-              height: MediaQuery.of(context).size.height * 0.35,
+              width: screenSize.width * 0.4,
+              height: screenSize.height * 0.35,
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 borderRadius: const BorderRadius.only(
                   bottomRight: Radius.circular(20),
                 ),
@@ -89,11 +91,11 @@ class _MainStageState extends State<MainStage> {
           // 4. 上拉菜单入口 [7]
           Positioned(
             bottom: 0,
-            left: MediaQuery.of(context).size.width * 0.05,
+            left: screenSize.width * 0.05,
             child: Container(
               color: Colors.grey,
-              width: MediaQuery.of(context).size.width * 0.15,
-              height: MediaQuery.of(context).size.height * 0.15,
+              width: screenSize.width * 0.15,
+              height: screenSize.height * 0.15,
               padding: const EdgeInsets.all(16),
               child: const Icon(
                 Icons.keyboard_arrow_up,

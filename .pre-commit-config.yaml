@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check-images
+        name: 检查并转换图片为 WebP
+        entry: uv run scripts/check_images.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]

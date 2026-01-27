@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'ui_widgets.dart'; // 引入组件库
+// 预留其他模块的引用（需要先创建对应的空文件）
+import 'app_controller.dart';
+import 'character_view.dart';
+import 'ui_widgets.dart';
 
 void main() {
   runApp(const MyApp());
@@ -11,96 +14,94 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false, // 隐藏 Debug 标签
-      home: TestPage(),
+      debugShowCheckedModeBanner: false,
+      title: 'Study App(MVP)',
+      theme: ThemeData(primarySwatch: Colors.orange),
+      home: const MainStage(),
     );
   }
 }
 
-// 模拟测试页面 (模拟组员 C 的 AppController)
-class TestPage extends StatefulWidget {
+class MainStage extends StatefulWidget {
+  const MainStage({super.key});
+
   @override
-  _TestPageState createState() => _TestPageState();
+  State<MainStage> createState() => _MainStageState();
 }
 
-class _TestPageState extends State<TestPage> {
-  // === 模拟状态数据 ===
-  int _seconds = 1500;       // 倒计时 (25分钟)
-  bool _isActive = false;    // 是否运行中
+class _MainStageState extends State<MainStage> {
+  // 创建 AppController 实例（逻辑中枢）
+  late final AppController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = AppController();
+  }
+
+  @override
+  void dispose() {
+    // 释放 AppController 中的所有资源
+    controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    
     return Scaffold(
-      backgroundColor: Color(0xFFFFF7AE), // 奶油黄背景
-      
+      // 使用 Stack 布局，确保背景、角色、UI 层次分明 [3, 4]
       body: Stack(
         children: [
-          // 1. 背景层：模拟 Live2D 小人
+          // 1. 背景层
+          Positioned.fill(
+            child: Image.asset('assets/background.webp', fit: BoxFit.cover),
+          ),
+
+          // 2. 角色层 (对应组员 B 的模块) [4, 5]
           Center(
-            child: Opacity(
-              opacity: 0.2,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.person_outline, size: 200, color: Colors.blueGrey),
-                  Text("Live2D Character Placeholder"),
-                ],
+            child: Container(
+              color: Colors.grey,
+              padding: const EdgeInsets.all(16),
+              child: const Text(
+                "这里是角色占位符",
+                style: TextStyle(fontSize: 28, color: Colors.white),
               ),
             ),
           ),
 
-          // 2. UI 层：你的组件
-          SafeArea(
-            child: Column(
-              children: [
-                SizedBox(height: 60), // 顶部留白
-                
-                // ⬇️ 倒计时组件
-                PomodoroTimer(
-                  seconds: _seconds, 
-                  totalSeconds: 1500
+          // 3. UI 交互层 (对应组员 D 的模块) [4, 6]
+          Positioned(
+            top: 0,
+            left: 0,
+            child: Container(
+              width: screenSize.width * 0.4,
+              height: screenSize.height * 0.35,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: const BorderRadius.only(
+                  bottomRight: Radius.circular(20),
                 ),
-                
-                Spacer(), // 把中间撑开
-                
-                // ⬇️ Dock 栏组件
-                DockBar(
-                  isActive: _isActive,
-                  
-                  // 1. 点击播放/暂停 -> toggleTimer
-                  onToggleTimer: () {
-                    setState(() {
-                      _isActive = !_isActive;
-                      if (_isActive) _seconds -= 10; // 模拟跑秒
-                    });
-                    print("调用接口: toggleTimer()");
-                  },
-                  
-                  // 2. 长按 -> resetTimer (新增)
-                  onResetTimer: () {
-                    setState(() {
-                      _isActive = false;
-                      _seconds = 1500; // 重置回 25:00
-                    });
-                    print("调用接口: resetTimer()");
-                  },
-                  
-                  // 3. 点击统计 -> fetchHistoryData
-                  onShowStats: () {
-                    showModalBottomSheet(
-                      context: context,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => StatsPanel(
-                        totalMinutes: 45, 
-                        totalDays: 3,
-                      ),
-                    );
-                    print("调用接口: fetchHistoryData()");
-                  },
-                ),
-                
-                SizedBox(height: 40), // 底部留白
-              ],
+              ),
+              child: UIWidgets(controller: controller),
+            ),
+          ),
+
+          // 4. 上拉菜单入口 [7]
+          Positioned(
+            bottom: 0,
+            left: screenSize.width * 0.05,
+            child: Container(
+              color: Colors.grey,
+              width: screenSize.width * 0.15,
+              height: screenSize.height * 0.15,
+              padding: const EdgeInsets.all(16),
+              child: const Icon(
+                Icons.keyboard_arrow_up,
+                size: 40,
+                color: Colors.white,
+              ),
             ),
           ),
         ],

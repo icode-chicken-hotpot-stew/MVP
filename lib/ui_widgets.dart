@@ -37,7 +37,9 @@ class DockBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 90,
-      width: 360,
+      // width: 360, // 【修复】注释掉固定宽度，防止小屏手机左右溢出（导致右侧黄色条纹）
+      // 【修复】使用 constraints 限制最大宽度，这样大屏保持胶囊状，小屏自动收缩
+      constraints: const BoxConstraints(maxWidth: 360), 
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.95),
         borderRadius: BorderRadius.circular(45),
@@ -288,108 +290,115 @@ class _UIWidgetsState extends State<UIWidgets> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(12.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // [DEBUG] 人物动画占位区（后续替换为动画小人）
-          _buildCharacterStage(context),
-
-          const SizedBox(height: 10),
-
-          // 1. 进度条（UI 假动画）
-          LinearProgressIndicator(
-            value: _fakeProgress,
-            minHeight: 10,
-            backgroundColor: Colors.white24,
-            color: Colors.orange,
-          ),
-
-          const SizedBox(height: 10),
-
-          // 2. Dock 栏
-          ValueListenableBuilder<bool>(
-            valueListenable: widget.controller.isActive,
-            builder: (context, active, _) {
-              // ===============================
-              // 【修改】这里不再 start/stop timer
-              // 原因：
-              // - builder 属于 build 阶段，不应该做副作用操作
-              // - timer 的 start/stop 已移动到 initState 的监听器中完成
-              // ===============================
-              return DockBar(
-                isActive: active,
-                onToggleTimer: () {
-                  // [DEBUG] UIWidgets 收到播放键事件调试（确认 DockBar 回调有传进来）
-                  debugPrint(
-                    '[DEBUG][UIWidgets] onToggleTimer() called. before isActive=${widget.controller.isActive.value}',
-                  );
-
-                  widget.controller.toggleTimer();
-
-                  debugPrint(
-                    '[DEBUG][UIWidgets] onToggleTimer() finished. after isActive=${widget.controller.isActive.value}',
-                  );
-                },
-
-                // ===============================
-                // 【修改】重置按钮：同时重置 controller + UI 假进度
-                // 说明：
-                // - controller.resetTimer() 由组员 C 实现真实逻辑
-                // - _resetFakeProgress() 是你（UI）负责的“视觉归零”
-                // ===============================
-                onResetTimer: () {
-                  // [DEBUG] reset 点击调试
-                  debugPrint('[DEBUG][UIWidgets] Reset tapped');
-
-                  widget.controller.resetTimer();
-                  _resetFakeProgress();
-                },
-
-                onShowStats: () {
-                  // [DEBUG] stats 点击调试
-                  debugPrint('[DEBUG][UIWidgets] Stats tapped');
-
-                  widget.controller.fetchHistoryData();
-                  _showStatsPanel(context);
-                },
-                onShare: () {
-                  // [DEBUG] share 点击调试
-                  debugPrint('[DEBUG][UIWidgets] Share tapped');
-
-                  _showShareCard(context, widget.controller);
-                },
-              );
-            },
-          ),
-
-          const SizedBox(height: 10),
-
-          // 4. 日期 & 时间（仍然监听真实接口）
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    // 【修复】最外层包裹 SafeArea，防止被 Pixel 5 的底部黑条（Home Indicator）遮挡
+    return SafeArea(
+      // 【修复】包裹 SingleChildScrollView，防止屏幕高度不足时（或者横屏时）出现底部溢出警告（黄黑条纹）
+      // 这里的 SingleChildScrollView 是消除“黄色条纹”的关键
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              ValueListenableBuilder<String>(
-                valueListenable: widget.controller.currentDate,
-                builder: (context, dateString, _) {
-                  return Text(dateString, style: TextStyle(fontSize: 14, color: Colors.white));
+              // [DEBUG] 人物动画占位区（后续替换为动画小人）
+              _buildCharacterStage(context),
+      
+              const SizedBox(height: 10),
+      
+              // 1. 进度条（UI 假动画）
+              LinearProgressIndicator(
+                value: _fakeProgress,
+                minHeight: 10,
+                backgroundColor: Colors.white24,
+                color: Colors.orange,
+              ),
+      
+              const SizedBox(height: 10),
+      
+              // 2. Dock 栏
+              ValueListenableBuilder<bool>(
+                valueListenable: widget.controller.isActive,
+                builder: (context, active, _) {
+                  // ===============================
+                  // 【修改】这里不再 start/stop timer
+                  // 原因：
+                  // - builder 属于 build 阶段，不应该做副作用操作
+                  // - timer 的 start/stop 已移动到 initState 的监听器中完成
+                  // ===============================
+                  return DockBar(
+                    isActive: active,
+                    onToggleTimer: () {
+                      // [DEBUG] UIWidgets 收到播放键事件调试（确认 DockBar 回调有传进来）
+                      debugPrint(
+                        '[DEBUG][UIWidgets] onToggleTimer() called. before isActive=${widget.controller.isActive.value}',
+                      );
+      
+                      widget.controller.toggleTimer();
+      
+                      debugPrint(
+                        '[DEBUG][UIWidgets] onToggleTimer() finished. after isActive=${widget.controller.isActive.value}',
+                      );
+                    },
+      
+                    // ===============================
+                    // 【修改】重置按钮：同时重置 controller + UI 假进度
+                    // 说明：
+                    // - controller.resetTimer() 由组员 C 实现真实逻辑
+                    // - _resetFakeProgress() 是你（UI）负责的“视觉归零”
+                    // ===============================
+                    onResetTimer: () {
+                      // [DEBUG] reset 点击调试
+                      debugPrint('[DEBUG][UIWidgets] Reset tapped');
+      
+                      widget.controller.resetTimer();
+                      _resetFakeProgress();
+                    },
+      
+                    onShowStats: () {
+                      // [DEBUG] stats 点击调试
+                      debugPrint('[DEBUG][UIWidgets] Stats tapped');
+      
+                      widget.controller.fetchHistoryData();
+                      _showStatsPanel(context);
+                    },
+                    onShare: () {
+                      // [DEBUG] share 点击调试
+                      debugPrint('[DEBUG][UIWidgets] Share tapped');
+      
+                      _showShareCard(context, widget.controller);
+                    },
+                  );
                 },
               ),
-              ValueListenableBuilder<int>(
-                valueListenable: widget.controller.remainingSeconds,
-                builder: (context, seconds, _) {
-                  final time =
-                      "${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}";
-                  return Text(
-                    time,
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange),
-                  );
-                },
+      
+              const SizedBox(height: 10),
+      
+              // 4. 日期 & 时间（仍然监听真实接口）
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  ValueListenableBuilder<String>(
+                    valueListenable: widget.controller.currentDate,
+                    builder: (context, dateString, _) {
+                      return Text(dateString, style: TextStyle(fontSize: 14, color: Colors.white));
+                    },
+                  ),
+                  ValueListenableBuilder<int>(
+                    valueListenable: widget.controller.remainingSeconds,
+                    builder: (context, seconds, _) {
+                      final time =
+                          "${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}";
+                      return Text(
+                        time,
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange),
+                      );
+                    },
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -425,6 +434,7 @@ void _showShareCard(BuildContext context, AppController controller) {
     ),
   );
 }
+
 
 
 

@@ -36,10 +36,10 @@ class DockBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 90,
+      height: 60,
       // width: 360, // 【修复】注释掉固定宽度，防止小屏手机左右溢出（导致右侧黄色条纹）
       // 【修复】使用 constraints 限制最大宽度，这样大屏保持胶囊状，小屏自动收缩
-      constraints: const BoxConstraints(maxWidth: 360), 
+      constraints: const BoxConstraints(maxWidth: 260), 
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.95),
         borderRadius: BorderRadius.circular(45),
@@ -53,14 +53,14 @@ class DockBar extends StatelessWidget {
         children: [
           // 📊 统计按钮（左侧）
           IconButton(
-            icon: Icon(Icons.bar_chart_rounded, size: 30, color: Colors.grey),
+            icon: Icon(Icons.bar_chart_rounded, size: 22, color: Colors.grey),
             onPressed: onShowStats,
             tooltip: '学习统计',
           ),
 
           // 🔄 重置按钮
           IconButton(
-            icon: Icon(Icons.refresh_rounded, size: 28, color: Colors.grey),
+            icon: Icon(Icons.refresh_rounded, size: 22, color: Colors.grey),
             onPressed: onResetTimer,
             tooltip: '重置计时',
           ),
@@ -76,8 +76,8 @@ class DockBar extends StatelessWidget {
             },
             child: AnimatedContainer(
               duration: Duration(milliseconds: 200),
-              width: 64,
-              height: 64,
+              width: 44,
+              height: 44,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: isActive ? Color(0xFFFF6B6B) : Color(0xFF2D3436),
@@ -96,14 +96,14 @@ class DockBar extends StatelessWidget {
 
           // 📤 分享按钮
           IconButton(
-            icon: Icon(Icons.share_rounded, size: 28, color: Colors.grey),
+            icon: Icon(Icons.share_rounded, size: 22, color: Colors.grey),
             onPressed: onShare,
             tooltip: '生成分享卡片',
           ),
 
           // ⚙️ 设置按钮（占位）
           IconButton(
-            icon: Icon(Icons.settings_rounded, size: 30, color: Colors.grey),
+            icon: Icon(Icons.settings_rounded, size: 22, color: Colors.grey),
             onPressed: () {},
             tooltip: '设置',
           ),
@@ -240,17 +240,30 @@ class _UIWidgetsState extends State<UIWidgets> {
         // [DEBUG] 人物动画状态调试（后续换动画也能用）
         debugPrint('[DEBUG][CharacterStage] active=$active');
 
+        // 【布局调整】全屏人物背景
+        // 移除了原本的 Height:180 限制，改用 Container 填充
+        // 在 build 方法里会用 Positioned.fill 让它撑满屏幕
         return Container(
-          height: 180,
           width: double.infinity,
+          height: double.infinity, // 撑满
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(20),
+            // 这里以后可以换成 DecorationImage(image: AssetImage(...), fit: BoxFit.cover)
           ),
-          child: Text(
-            active ? '🏃 小人：跑步动画（占位）' : '🧍 小人：待机动画（占位）',
-            style: const TextStyle(color: Colors.white),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+               Text(
+                active ? '🏃' : '🧍',
+                style: const TextStyle(fontSize: 80), // 图标变大一点，配合全屏
+              ),
+              const SizedBox(height: 10),
+              Text(
+                active ? '小人：全屏跑步中' : '小人：全屏待机中',
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ],
           ),
         );
       },
@@ -290,97 +303,99 @@ class _UIWidgetsState extends State<UIWidgets> {
 
   @override
   Widget build(BuildContext context) {
-    // 【修复】最外层包裹 SafeArea，防止被 Pixel 5 的底部黑条（Home Indicator）遮挡
-    return SafeArea(
-      // 【修复】包裹 SingleChildScrollView，防止屏幕高度不足时（或者横屏时）出现底部溢出警告（黄黑条纹）
-      // 这里的 SingleChildScrollView 是消除“黄色条纹”的关键
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // [DEBUG] 人物动画占位区（后续替换为动画小人）
-              _buildCharacterStage(context),
+    // 【布局调整】使用 Stack（层叠布局）替换原来的 Column（垂直布局）
+    // 理由：Stack 允许元素重叠，实现“全屏背景”+“悬浮 UI”的效果
+    return Scaffold(
+      backgroundColor: Colors.transparent, // 背景透明，方便透出后面的元素（如果有）
+      body: Stack(
+        children: [
+          // ------------------------------------------------
+          // 第一层（最底层）：全屏人物动画
+          // ------------------------------------------------
+          Positioned.fill(
+            child: _buildCharacterStage(context),
+          ),
       
-              const SizedBox(height: 10),
+          // ------------------------------------------------
+          // 第二层（悬浮层）：左上角的控制区 (Dock + 进度条)
+          // ------------------------------------------------
+          Positioned(
+            top: 0,
+            left: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0), // 留点边距
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, // 左对齐
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 1. 进度条 (变小了)
+                    // 【布局调整】限制宽度为 260，使其更精致，放在 Dock 上方
+                    SizedBox(
+                      width: 260, 
+                      child: LinearProgressIndicator(
+                        value: _fakeProgress,
+                        minHeight: 8, //稍微变细一点
+                        backgroundColor: Colors.white24,
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 12), // 间距
       
-              // 1. 进度条（UI 假动画）
-              LinearProgressIndicator(
-                value: _fakeProgress,
-                minHeight: 10,
-                backgroundColor: Colors.white24,
-                color: Colors.orange,
+                    // 2. Dock 栏
+                    // 这里直接复用 DockBar，因为父级是 Column(left对齐)，所以它会靠左显示
+                    ValueListenableBuilder<bool>(
+                      valueListenable: widget.controller.isActive,
+                      builder: (context, active, _) {
+                        return DockBar(
+                          isActive: active,
+                          onToggleTimer: () => widget.controller.toggleTimer(),
+                          onResetTimer: () {
+                            widget.controller.resetTimer();
+                            _resetFakeProgress();
+                          },
+                          onShowStats: () {
+                            widget.controller.fetchHistoryData();
+                            _showStatsPanel(context);
+                          },
+                          onShare: () {
+                            _showShareCard(context, widget.controller);
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
+            ),
+          ),
       
-              const SizedBox(height: 10),
-      
-              // 2. Dock 栏
-              ValueListenableBuilder<bool>(
-                valueListenable: widget.controller.isActive,
-                builder: (context, active, _) {
-                  // ===============================
-                  // 【修改】这里不再 start/stop timer
-                  // 原因：
-                  // - builder 属于 build 阶段，不应该做副作用操作
-                  // - timer 的 start/stop 已移动到 initState 的监听器中完成
-                  // ===============================
-                  return DockBar(
-                    isActive: active,
-                    onToggleTimer: () {
-                      // [DEBUG] UIWidgets 收到播放键事件调试（确认 DockBar 回调有传进来）
-                      debugPrint(
-                        '[DEBUG][UIWidgets] onToggleTimer() called. before isActive=${widget.controller.isActive.value}',
-                      );
-      
-                      widget.controller.toggleTimer();
-      
-                      debugPrint(
-                        '[DEBUG][UIWidgets] onToggleTimer() finished. after isActive=${widget.controller.isActive.value}',
-                      );
-                    },
-      
-                    // ===============================
-                    // 【修改】重置按钮：同时重置 controller + UI 假进度
-                    // 说明：
-                    // - controller.resetTimer() 由组员 C 实现真实逻辑
-                    // - _resetFakeProgress() 是你（UI）负责的“视觉归零”
-                    // ===============================
-                    onResetTimer: () {
-                      // [DEBUG] reset 点击调试
-                      debugPrint('[DEBUG][UIWidgets] Reset tapped');
-      
-                      widget.controller.resetTimer();
-                      _resetFakeProgress();
-                    },
-      
-                    onShowStats: () {
-                      // [DEBUG] stats 点击调试
-                      debugPrint('[DEBUG][UIWidgets] Stats tapped');
-      
-                      widget.controller.fetchHistoryData();
-                      _showStatsPanel(context);
-                    },
-                    onShare: () {
-                      // [DEBUG] share 点击调试
-                      debugPrint('[DEBUG][UIWidgets] Share tapped');
-      
-                      _showShareCard(context, widget.controller);
-                    },
-                  );
-                },
-              ),
-      
-              const SizedBox(height: 10),
-      
-              // 4. 日期 & 时间（仍然监听真实接口）
-              Row(
+          // ------------------------------------------------
+          // 第三层（悬浮层）：底部的日期和时间
+          // ------------------------------------------------
+          // 【布局调整】把日期时间固定在屏幕底部中央
+          Positioned(
+            bottom: 30,
+            left: 20,
+            right: 20,
+            child: SafeArea(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   ValueListenableBuilder<String>(
                     valueListenable: widget.controller.currentDate,
                     builder: (context, dateString, _) {
-                      return Text(dateString, style: TextStyle(fontSize: 14, color: Colors.white));
+                      return Text(
+                        dateString,
+                        // 加了阴影，防止背景太白导致文字看不清
+                        style: TextStyle(
+                          fontSize: 14, 
+                          color: Colors.white,
+                          shadows: [Shadow(blurRadius: 2, color: Colors.black45, offset: Offset(1,1))]
+                        ),
+                      );
                     },
                   ),
                   ValueListenableBuilder<int>(
@@ -390,15 +405,20 @@ class _UIWidgetsState extends State<UIWidgets> {
                           "${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}";
                       return Text(
                         time,
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange),
+                        style: TextStyle(
+                          fontSize: 18, 
+                          fontWeight: FontWeight.bold, 
+                          color: Colors.orange,
+                          shadows: [Shadow(blurRadius: 2, color: Colors.black45, offset: Offset(1,1))]
+                        ),
                       );
                     },
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -434,6 +454,7 @@ void _showShareCard(BuildContext context, AppController controller) {
     ),
   );
 }
+
 
 
 

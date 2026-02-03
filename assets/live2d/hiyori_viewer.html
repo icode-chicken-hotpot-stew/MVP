@@ -1,0 +1,939 @@
+<!-- 保存为 assets/live2d/test_simplified.html -->
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live2D Minimal Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #status {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px 18px;
+            border-radius: 10px;
+            border-left: 4px solid #00ffaa;
+            z-index: 100;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            z-index: 100;
+        }
+
+        button {
+            padding: 10px 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            flex: 1;
+            min-width: 100px;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+    </style>
+
+    <!-- 先覆盖 fetch，允许通过 JavaScript Channel 加载资源 -->
+    <script>
+        let _assetCallbacks = {};
+        let _binaryAssetCallbacks = {};
+        let _callbackCounter = 0;
+
+        // Receive text assets
+        window._assetLoaded = (callbackId, content, error) => {
+            const callback = _assetCallbacks[callbackId];
+            if (callback) {
+                callback(content, error);
+                delete _assetCallbacks[callbackId];
+            }
+        };
+
+        // Receive binary assets
+        window._binaryAssetLoaded = (callbackId, dataUrl, error) => {
+            const callback = _binaryAssetCallbacks[callbackId];
+            if (callback) {
+                callback(dataUrl, error);
+                delete _binaryAssetCallbacks[callbackId];
+            }
+        };
+
+        // Will be replaced by Flutter with base64 data URLs before load
+        window._preloadedTextures = /*__PRELOADED_TEXTURES__*/ {};
+
+        function injectTexturesIntoModelJson(jsonText) {
+            try {
+                const obj = JSON.parse(jsonText);
+                const textures = obj?.FileReferences?.Textures;
+                if (Array.isArray(textures) && window._preloadedTextures) {
+                    const updated = textures.map((t) => {
+                        const fileName = String(t || '').split('/').pop();
+                        const key = fileName?.replace('.png', '') || '';
+                        const replacement = window._preloadedTextures[key];
+                        // Return replacement if available (could be blob URL or data URL)
+                        return replacement || t;
+                    });
+                    if (obj.FileReferences) {
+                        obj.FileReferences.Textures = updated;
+                    }
+                    // Return as JSON string
+                    return JSON.stringify(obj);
+                }
+            } catch (e) {
+                console.warn('[ModelJSON] Failed to inject textures:', e);
+            }
+            return jsonText;
+        }
+
+        const xhrFetch = (input, init = {}) => {
+            const url = typeof input === 'string' ? input : input.url;
+
+            // Debug: log all fetch requests
+            console.log(`[Fetch] URL: ${url}, responseType: ${init.responseType}`);
+
+            // Handle appassets protocol
+            if (url.startsWith('https://appassets.androidplatform.net/assets/')) {
+                console.log(`[Fetch] Intercept appassets URL: ${url}`);
+                return new Promise((resolve, reject) => {
+                    const assetPath = url.replace('https://appassets.androidplatform.net/', '');
+                    const callbackId = `${Date.now()}_${++_callbackCounter}`;
+                    // Determine binary by file extension (fetch doesn't carry responseType)
+                    const lower = assetPath.toLowerCase();
+                    const isBinary = /\.(png|jpg|jpeg|moc3|mp3|wav)$/i.test(lower);
+
+                    console.log(`[Fetch] assetPath: ${assetPath}, isBinary: ${isBinary}, callbackId: ${callbackId}`);
+
+                    if (isBinary) {
+                        _binaryAssetCallbacks[callbackId] = (dataUrl, error) => {
+                            if (error) {
+                                console.error(`[Binary Asset] Load failed ${callbackId}: ${error}`);
+                                reject(new Error(`Asset loading failed: ${error}`));
+                            } else if (dataUrl) {
+                                // dataUrl -> ArrayBuffer -> Blob with correct MIME
+                                try {
+                                    const match = dataUrl.match(/^data:([^;]+);base64,/i);
+                                    const mime = match ? match[1] : 'application/octet-stream';
+                                    const base64Part = dataUrl.split(',')[1];
+                                    const bstr = atob(base64Part);
+                                    const bytes = new Uint8Array(bstr.length);
+                                    for (let i = 0; i < bstr.length; i++) {
+                                        bytes[i] = bstr.charCodeAt(i);
+                                    }
+                                    const blob = new Blob([bytes], { type: mime });
+                                    console.log(`[Binary Asset] Loaded ${callbackId}: ${bstr.length} bytes, mime: ${mime}`);
+                                    resolve(new Response(blob, { status: 200 }));
+                                } catch (e) {
+                                    console.error(`[Binary Asset] Decode failed ${callbackId}:`, e);
+                                    reject(new Error(`Failed to decode base64: ${e.message}`));
+                                }
+                            } else {
+                                console.error(`[Binary Asset] No data ${callbackId}`);
+                                reject(new Error('Asset not loaded'));
+                            }
+                        };
+                        console.log(`[Binary Asset] Request ${assetPath} with ID ${callbackId}`);
+                        BinaryAssetLoader.postMessage(`${assetPath}|${callbackId}`);
+                    } else {
+                        _assetCallbacks[callbackId] = (content, error) => {
+                            if (error) {
+                                reject(new Error(`Asset loading failed: ${error}`));
+                            } else if (content != null) {
+                                // Create Response with text() and json() support
+                                const contentStr = String(content);
+                                const isJson = /\.(json|model3.json|motion3.json|pose3.json|physics3.json|userdata3.json)$/i.test(assetPath);
+                                const response = new Response(contentStr, {
+                                    status: 200,
+                                    statusText: 'OK',
+                                    headers: new Headers({
+                                        'Content-Type': isJson ? 'application/json' : 'text/plain'
+                                    })
+                                });
+
+                                // Ensure text() and json() methods work
+                                if (!response.text) {
+                                    response.text = () => Promise.resolve(contentStr);
+                                }
+                                if (!response.json) {
+                                    response.json = () => Promise.resolve(isJson ? JSON.parse(contentStr) : JSON.parse(contentStr));
+                                }
+
+                                resolve(response);
+                            } else {
+                                reject(new Error('Asset not loaded'));
+                            }
+                        };
+                        AssetLoader.postMessage(`${assetPath}|${callbackId}`);
+                    }
+                });
+            }
+
+            // Original XHR implementation
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open(init.method || 'GET', url, true);
+                xhr.responseType = init.responseType || 'arraybuffer';
+                if (init.headers) {
+                    Object.entries(init.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+                }
+                xhr.onload = () => {
+                    const ok = xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300);
+                    if (ok) {
+                        resolve(new Response(xhr.response, { status: xhr.status || 200 }));
+                    } else {
+                        reject(new Error(`XHR status ${xhr.status}`));
+                    }
+                };
+                xhr.onerror = () => reject(new Error('XHR failed'));
+                xhr.send(init.body);
+            });
+        };
+        window.fetch = xhrFetch;
+
+        // Patch XMLHttpRequest to intercept appassets loads as well
+        (() => {
+            const APP_ASSETS_PREFIX = 'https://appassets.androidplatform.net/';
+            const origOpen = XMLHttpRequest.prototype.open;
+            const origSend = XMLHttpRequest.prototype.send;
+
+            function isBinaryPath(path) {
+                return /\.(png|jpg|jpeg|moc3|mp3|wav)$/i.test(path);
+            }
+
+            XMLHttpRequest.prototype.open = function (method, url, async = true, user, password) {
+                this._method = method;
+                this._url = String(url);
+                this._async = async !== false;
+                this._intercept = this._url.startsWith(APP_ASSETS_PREFIX + 'assets/');
+                if (this._intercept) {
+                    console.log('[XHRPatch] Intercept', this._method, this._url);
+                }
+                return origOpen.apply(this, arguments);
+            };
+
+            XMLHttpRequest.prototype.send = function (body) {
+                if (!this._intercept) {
+                    return origSend.call(this, body);
+                }
+                try {
+                    const assetPath = this._url.replace(APP_ASSETS_PREFIX, '');
+                    const callbackId = `${Date.now()}_${++_callbackCounter}`;
+                    const binary = isBinaryPath(assetPath);
+
+                    const complete = (ok, resp, mime) => {
+                        try {
+                            const responseType = this.responseType || (binary ? 'arraybuffer' : 'text');
+                            const headers = `content-type: ${mime || (binary ? 'application/octet-stream' : 'text/plain')}`;
+                            // Define readonly props
+                            try { Object.defineProperty(this, 'readyState', { value: 4 }); } catch (_) { }
+                            try { Object.defineProperty(this, 'status', { value: ok ? 200 : 500 }); } catch (_) { }
+                            try { Object.defineProperty(this, 'statusText', { value: ok ? 'OK' : 'ERROR' }); } catch (_) { }
+                            try { Object.defineProperty(this, 'getAllResponseHeaders', { value: () => headers }); } catch (_) { }
+                            try { Object.defineProperty(this, 'responseURL', { value: this._url }); } catch (_) { }
+
+                            let responseValue = resp;
+                            if (responseType === 'arraybuffer' && resp instanceof Blob) {
+                                responseValue = resp.arrayBuffer ? undefined : resp; // will fill below
+                            }
+
+                            const finalize = (finalResp) => {
+                                try { Object.defineProperty(this, 'response', { value: finalResp }); } catch (_) { this.response = finalResp; }
+                                if (responseType === '' || responseType === 'text') {
+                                    const text = typeof finalResp === 'string' ? finalResp : '';
+                                    try { Object.defineProperty(this, 'responseText', { value: text }); } catch (_) { this.responseText = text; }
+                                }
+                                if (typeof this.onload === 'function') this.onload(new Event('load'));
+                                if (typeof this.onreadystatechange === 'function') this.onreadystatechange(new Event('readystatechange'));
+                            };
+
+                            if (resp instanceof Blob && responseType === 'arraybuffer') {
+                                resp.arrayBuffer().then(buf => finalize(buf));
+                            } else {
+                                finalize(responseValue);
+                            }
+                        } catch (e) {
+                            console.warn('[XHRPatch] finalize error', e);
+                            if (typeof this.onerror === 'function') this.onerror(new Event('error'));
+                        }
+                    };
+
+                    if (binary) {
+                        _binaryAssetCallbacks[callbackId] = (dataUrl, error) => {
+                            if (error || !dataUrl) {
+                                console.error('[XHRPatch] Binary load failed', assetPath, error);
+                                complete(false, null, 'application/octet-stream');
+                            } else {
+                                try {
+                                    const match = dataUrl.match(/^data:([^;]+);base64,/i);
+                                    const mime = match ? match[1] : 'application/octet-stream';
+                                    const base64Part = dataUrl.split(',')[1];
+                                    const bstr = atob(base64Part);
+                                    const bytes = new Uint8Array(bstr.length);
+                                    for (let i = 0; i < bstr.length; i++) bytes[i] = bstr.charCodeAt(i);
+                                    const blob = new Blob([bytes], { type: mime });
+                                    console.log('[XHRPatch] Binary loaded', assetPath, 'mime:', mime, 'bytes:', bytes.length);
+                                    complete(true, blob, mime);
+                                } catch (e) {
+                                    console.error('[XHRPatch] Decode error', e);
+                                    complete(false, null, 'application/octet-stream');
+                                }
+                            }
+                        };
+                        BinaryAssetLoader.postMessage(`${assetPath}|${callbackId}`);
+                    } else {
+                        _assetCallbacks[callbackId] = (content, error) => {
+                            if (error || content == null) {
+                                console.error('[XHRPatch] Text load failed', assetPath, error);
+                                complete(false, '');
+                            } else {
+                                let body = String(content);
+                                if (assetPath.endsWith('.model3.json')) {
+                                    body = injectTexturesIntoModelJson(body);
+                                }
+                                const isJsonMotion = /\.(model3.json|motion3.json|pose3.json|physics3.json|userdata3.json)$/i.test(assetPath);
+                                try {
+                                    complete(true, isJsonMotion ? JSON.parse(body) : body, 'application/json');
+                                } catch (e) {
+                                    console.warn('[XHRPatch] JSON parse failed, returning raw body', e);
+                                    complete(true, body, 'application/json');
+                                }
+                            }
+                        };
+                        AssetLoader.postMessage(`${assetPath}|${callbackId}`);
+                    }
+                } catch (e) {
+                    console.warn('[XHRPatch] send error', e);
+                    if (typeof this.onerror === 'function') this.onerror(new Event('error'));
+                }
+            };
+        })();
+
+        // Patch <img>.src to load appassets images via BinaryAssetLoader
+        (() => {
+            const imgProto = HTMLImageElement.prototype;
+            const srcDesc = Object.getOwnPropertyDescriptor(imgProto, 'src');
+            if (!srcDesc || !srcDesc.set || !srcDesc.get) {
+                console.warn('[ImagePatch] Unable to patch HTMLImageElement.src');
+                return;
+            }
+            const originalSet = srcDesc.set;
+            const originalGet = srcDesc.get;
+
+            Object.defineProperty(imgProto, 'src', {
+                configurable: true,
+                enumerable: true,
+                get: function () { return originalGet.call(this); },
+                set: function (value) {
+                    try {
+                        const url = String(value || '');
+                        const isAppAssets = url.startsWith('https://appassets.androidplatform.net/assets/');
+                        const isImage = /\.(png|jpg|jpeg)$/i.test(url);
+                        if (isAppAssets && isImage) {
+                            const assetPath = url.replace('https://appassets.androidplatform.net/', '');
+                            const callbackId = `${Date.now()}_${++_callbackCounter}`;
+                            console.log(`[ImagePatch] Intercept src: ${assetPath}, id=${callbackId}`);
+                            _binaryAssetCallbacks[callbackId] = (dataUrl, error) => {
+                                if (error || !dataUrl) {
+                                    console.warn(`[ImagePatch] Fallback original URL due to: ${error || 'no data'}`);
+                                    originalSet.call(this, url);
+                                } else {
+                                    try {
+                                        const match = dataUrl.match(/^data:([^;]+);base64,/i);
+                                        const mime = match ? match[1] : 'image/png';
+                                        const base64Part = dataUrl.split(',')[1];
+                                        const bstr = atob(base64Part);
+                                        const bytes = new Uint8Array(bstr.length);
+                                        for (let i = 0; i < bstr.length; i++) bytes[i] = bstr.charCodeAt(i);
+                                        const blob = new Blob([bytes], { type: mime });
+                                        const blobUrl = URL.createObjectURL(blob);
+                                        originalSet.call(this, blobUrl);
+                                        this.addEventListener('load', () => URL.revokeObjectURL(blobUrl), { once: true });
+                                    } catch (e) {
+                                        console.warn('[ImagePatch] Blob fallback failed, using dataUrl', e);
+                                        originalSet.call(this, dataUrl);
+                                    }
+                                }
+                            };
+                            BinaryAssetLoader.postMessage(`${assetPath}|${callbackId}`);
+                            return; // prevent setting original URL immediately
+                        }
+                    } catch (e) {
+                        console.warn('[ImagePatch] Error in src interceptor', e);
+                    }
+                    originalSet.call(this, value);
+                }
+            });
+
+            const originalSetAttribute = imgProto.setAttribute;
+            imgProto.setAttribute = function (name, value) {
+                if (String(name).toLowerCase() === 'src') {
+                    // Route through our patched setter
+                    this.src = value;
+                } else {
+                    originalSetAttribute.call(this, name, value);
+                }
+            };
+        })();
+    </script>
+
+    <!-- 配置 Cubism Core 不使用 wasm (使用 asm.js fallback) -->
+    <script>
+        window._em_module = {
+            locateFile: function (path) {
+                // 如果是 wasm 文件,返回空 - 强制使用 asm.js
+                if (path.endsWith('.wasm')) {
+                    console.log('Blocking wasm load, using asm.js fallback');
+                    return '';
+                }
+                return path;
+            }
+        };
+    </script>
+
+    <!-- 加载PIXI和Live2D库 -->
+    <script src="https://appassets.androidplatform.net/assets/live2d/libs/pixi.min.js"></script>
+    <script src="https://appassets.androidplatform.net/assets/live2d/libs/live2dcubismcore.min.js"></script>
+    <script src="https://appassets.androidplatform.net/assets/live2d/libs/pixi-live2d-display.min.js"></script>
+</head>
+
+<body>
+    <div id="container">
+        <div id="status">Initializing...</div>
+        <canvas id="canvas"></canvas>
+        <div id="controls" style="display:none;">
+            <button onclick="playMotion('Idle')">Idle</button>
+            <button onclick="playMotion('TapBody')">Tap</button>
+            <button onclick="changeExpression('f01')">Smile</button>
+            <button onclick="changeExpression('f02')">Sad</button>
+            <button onclick="changeExpression('f03')">Angry</button>
+            <button onclick="changeExpression('f04')">Surprised</button>
+        </div>
+    </div>
+
+    <script>
+        let app = null;
+        let model = null;
+
+        function updateStatus(message) {
+            document.getElementById('status').textContent = message;
+            console.log('[Live2D]', message);
+
+            // 发送到Flutter
+            if (window.Live2DController) {
+                Live2DController.postMessage(message);
+            }
+        }
+
+        // Preload textures and register in PIXI Assets system
+        async function preloadTextures(app) {
+            console.log('[Preload] Using Flutter-injected textures...');
+
+            if (!window._preloadedTextures) {
+                throw new Error('No preloaded textures from Flutter!');
+            }
+
+            const textureUrls = [
+                'https://appassets.androidplatform.net/assets/live2d/hiyori/Hiyori.2048/texture_00.png',
+                'https://appassets.androidplatform.net/assets/live2d/hiyori/Hiyori.2048/texture_01.png'
+            ];
+
+            const textureKeys = ['texture_00', 'texture_01'];
+
+            for (let i = 0; i < textureUrls.length; i++) {
+                const url = textureUrls[i];
+                const dataUrl = window._preloadedTextures[textureKeys[i]];
+
+                if (!dataUrl) {
+                    throw new Error(`Missing texture: ${textureKeys[i]}`);
+                }
+
+                console.log('[Preload] Loading', textureKeys[i], 'from data URL...');
+
+                // Create image from data URL
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = () => reject(new Error('Image load failed'));
+                    img.src = dataUrl;
+                });
+
+                console.log('[Preload] Image loaded:', url, `${img.width}x${img.height}`);
+
+                // Create PIXI Texture directly from HTMLImageElement
+                const texture = PIXI.Texture.from(img);
+
+                // Register in PIXI Assets cache with all possible URL formats
+                PIXI.Assets.cache.set(url, texture);
+                // Also register relative path variations
+                const relativePath = url.split('/hiyori/')[1];
+                if (relativePath) {
+                    PIXI.Assets.cache.set(relativePath, texture);
+                    const fileName = relativePath.split('/').pop();
+                    PIXI.Assets.cache.set(fileName, texture);
+                    PIXI.Assets.cache.set('Hiyori.2048/' + fileName, texture);
+                }
+
+                console.log('[Preload] Texture registered:', url);
+            }
+
+            console.log('[Preload] All textures loaded from Flutter injection');
+        }
+
+        // Init
+        async function init() {
+            updateStatus('Checking PIXI...');
+
+            // 1. Check PIXI
+            if (typeof PIXI === 'undefined') {
+                updateStatus('❌ PIXI not loaded');
+                return;
+            }
+            updateStatus('✅ PIXI loaded');
+
+            // 2. Check Live2D plugin
+            if (!PIXI.live2d || !PIXI.live2d.Live2DModel) {
+                updateStatus('❌ Live2D plugin not loaded');
+                return;
+            }
+            updateStatus('✅ Live2D plugin loaded');
+
+            // 3. Wait for Live2D core to be ready
+            if (typeof window.Live2DCubismCore === 'undefined') {
+                console.log('[Init] Waiting for Live2D Cubism Core...');
+                await new Promise(resolve => {
+                    const check = setInterval(() => {
+                        if (typeof window.Live2DCubismCore !== 'undefined') {
+                            clearInterval(check);
+                            resolve();
+                        }
+                    }, 100);
+                });
+            }
+            console.log('[Init] Live2D Cubism Core ready');
+
+            // 4. Create PIXI app FIRST (Pixi v7+ needs await init/create)
+            try {
+                // Suppress WebGL warnings in console (Cubism SDK shader issue)
+                const originalWarn = console.warn;
+                const originalError = console.error;
+                console.warn = function (...args) {
+                    const msg = args.join(' ');
+                    if (!msg.includes('RENDER WARNING: there is no texture bound')) {
+                        originalWarn.apply(console, args);
+                    }
+                };
+                console.error = function (...args) {
+                    const msg = args.join(' ');
+                    if (!msg.includes('RENDER WARNING: there is no texture bound')) {
+                        originalError.apply(console, args);
+                    }
+                };
+
+                app = new PIXI.Application({
+                    view: document.getElementById('canvas'),
+                    resizeTo: window,
+                    background: '#1a1a2e',
+                    antialias: true,
+                    preserveDrawingBuffer: false,
+                    powerPreference: 'high-performance'
+                });
+
+                updateStatus('PIXI app created');
+
+                // 5. Preload textures AFTER PIXI app is created
+                try {
+                    updateStatus('Preloading textures...');
+                    await preloadTextures(app);
+                    updateStatus('✅ Textures preloaded');
+                } catch (error) {
+                    console.error('[Init] Texture preload failed:', error);
+                    updateStatus('❌ Texture preload failed!');
+                    throw error;
+                }
+
+                // 6. Create Live2D model (Hiyori)
+                updateStatus('Creating Live2D model...');
+
+                // Pre-load model JSON, inject textures, then load from blob URL
+                const modelUrl = 'https://appassets.androidplatform.net/assets/live2d/hiyori/Hiyori.model3.json';
+                const modelBaseUrl = 'https://appassets.androidplatform.net/assets/live2d/hiyori/';
+                updateStatus(`Loading model: ${modelUrl}`);
+
+                try {
+                    console.log('[Live2D] Starting model load...');
+
+                    // Step 1: Fetch raw model JSON as text
+                    const modelResponse = await xhrFetch(modelUrl);
+                    const modelJsonText = await modelResponse.text();
+                    const modelJson = JSON.parse(modelJsonText);
+                    console.log('[Live2D] Model JSON loaded, injecting textures...');
+
+                    // Step 2: Inject preloaded textures and convert all paths to absolute URLs
+                    const textures = modelJson?.FileReferences?.Textures;
+                    if (Array.isArray(textures) && window._preloadedTextures) {
+                        modelJson.FileReferences.Textures = textures.map((t) => {
+                            const fileName = String(t || '').split('/').pop();
+                            const key = fileName?.replace('.png', '') || '';
+                            return window._preloadedTextures[key] || (modelBaseUrl + t);
+                        });
+                    }
+
+                    // Convert all relative paths to absolute URLs
+                    ['Moc', 'Pose', 'UserData', 'Physics'].forEach(key => {
+                        if (modelJson?.FileReferences?.[key] && !modelJson.FileReferences[key].startsWith('http')) {
+                            modelJson.FileReferences[key] = modelBaseUrl + modelJson.FileReferences[key];
+                        }
+                    });
+
+                    // Handle motions
+                    if (modelJson?.FileReferences?.Motions) {
+                        Object.entries(modelJson.FileReferences.Motions).forEach(([group, motions]) => {
+                            if (Array.isArray(motions)) {
+                                motions.forEach((motion, idx) => {
+                                    if (motion?.File && !motion.File.startsWith('http')) {
+                                        motions[idx].File = modelBaseUrl + motion.File;
+                                    }
+                                });
+                            }
+                        });
+                    }
+
+                    console.log('[Live2D] Textures and paths injected');
+
+                    // Step 3: Create blob URL from modified JSON
+                    const modifiedJson = JSON.stringify(modelJson);
+                    const blob = new Blob([modifiedJson], { type: 'application/json' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    console.log('[Live2D] Created blob URL for model:', blobUrl);
+
+                    // Step 4: Load from blob URL (no interception needed)
+                    model = await PIXI.live2d.Live2DModel.from(blobUrl, {
+                        autoInteract: false
+                    });
+                    console.log('[Live2D] Model loaded!');
+                    updateStatus('✅ Model loaded');
+
+                    // Clean up blob URL after loading
+                    URL.revokeObjectURL(blobUrl);
+                } catch (error) {
+                    console.error('[Live2D] Model load failed:', error);
+                    updateStatus(`❌ Model load failed: ${error.message}`);
+                    throw error;
+                }
+
+                // 居中、缩放与垂直对齐逻辑封装并在 resize 时重用
+                try {
+                    function applyVerticalAlignment(w, h) {
+                        try {
+                            const width = Number(w || window.innerWidth);
+                            const height = Number(h || window.innerHeight);
+
+                            // 基本缩放（可按需调整）
+                            model.scale.set(0.5);
+
+                            // 计算并设置 pivot 为局部中心（使 position 成为可视中心）
+                            try {
+                                const localBounds = model.getLocalBounds();
+                                const pivotX = (localBounds.x || 0) + (localBounds.width || 0) / 2;
+                                const pivotY = (localBounds.y || 0) + (localBounds.height || 0) / 2;
+                                if (model.pivot && typeof model.pivot.set === 'function') {
+                                    model.pivot.set(pivotX, pivotY);
+                                } else if (model.anchor && typeof model.anchor.set === 'function') {
+                                    model.anchor.set(0.5, 0.5);
+                                }
+                            } catch (e) {
+                                console.warn('[Live2D] Failed to set pivot from local bounds', e);
+                            }
+
+                            // 先基于局部高度计算偏移（更稳定）
+                            const localBounds2 = model.getLocalBounds();
+                            const localHeight = Number(localBounds2.height) || Number(model.height) || 0;
+                            const displayedHeight = localHeight * (model.scale?.y || model.scale || 1);
+
+                            // 向下移动的强度：upwardRatio 越大，模型中心越上移，整体看起来向下位移越多
+                            // 为了更明显地把头部移动到可视区，这里提高默认值
+                            const upwardRatio = 0.45; // 调高以让模型整体往下更多
+                            const offsetY = displayedHeight * upwardRatio;
+                            console.log('[Live2D] Centering model with upward offset:', { localHeight, displayedHeight, upwardRatio, offsetY });
+
+                            // 初始 position（相对于画布中心），先应用基于局部高度的偏移
+                            model.position.set(width / 2, height / 2 - offsetY);
+
+                            // 使用全局 bounds 做二次修正，确保模型顶部到达期望屏幕位置
+                            try {
+                                const globalBounds = model.getBounds();
+                                const desiredTop = Math.round(height * 0.35); // 把模型顶部移动到屏幕 55% 位置（进一步往下）
+                                const deltaY = desiredTop - (globalBounds.y || 0);
+                                console.log('[Live2D] Adjusting by global bounds:', { globalBounds, desiredTop, deltaY });
+                                // Apply primary adjustment
+                                model.position.y = (model.position.y || 0) + deltaY;
+                                // 如果仍然看起来偏低，应用额外的向上修正（基于模型显示高度）
+                                try {
+                                    const extraUp = Math.round(Math.max(50, (displayedHeight || 0) * 0.15));
+                                    console.log('[Live2D] Applying extra upward correction:', extraUp);
+                                    model.position.y = (model.position.y || 0) - extraUp;
+                                } catch (e) {
+                                    console.warn('[Live2D] extra upward correction failed', e);
+                                }
+                            } catch (e) {
+                                console.warn('[Live2D] Global bounds adjustment failed', e);
+                            }
+
+                            // 触发一次 debug 绘制更新
+                            setTimeout(() => {
+                                try { if (typeof drawDebugBounds === 'function') drawDebugBounds(); } catch(_){ }
+                            }, 60);
+                        } catch (e) {
+                            console.warn('[Live2D] applyVerticalAlignment failed', e);
+                        }
+                    }
+
+                    // 执行一次对齐
+                    applyVerticalAlignment(window.innerWidth, window.innerHeight);
+
+                    // 在窗口 resize 时也应用相同的对齐逻辑（替代原先简单的居中）
+                    window._applyVerticalAlignment = applyVerticalAlignment;
+                } catch (e) {
+                    console.log('[Live2D] Error setting model properties:', e.message);
+                }
+
+                // 允许交互
+                model.eventMode = 'static';
+                model.cursor = 'pointer';
+
+                app.stage.addChild(model);
+
+                // --- DEBUG HELPERS: draw model bounds and log textures ---
+                try {
+                    // Ensure stage sortable so overlays appear above model
+                    app.stage.sortableChildren = true;
+
+                    // Log internal texture info if available
+                    if (model.internalModel && model.internalModel.textures) {
+                        console.log('[Live2D] Model has', model.internalModel.textures.length, 'textures');
+                        model.internalModel.textures.forEach((tex, i) => {
+                            try {
+                                console.log(`[Live2D] Texture ${i}:`, tex && tex.width, 'x', tex && tex.height, 'valid:', tex && tex.valid);
+                            } catch (e) {
+                                console.log('[Live2D] Texture log error', e);
+                            }
+                        });
+                    } else {
+                        console.log('[Live2D] No internal textures information available');
+                    }
+
+                    // Attempt to get bounds and draw a visible rectangle around the model
+                    const drawDebugBounds = () => {
+                        try {
+                            const bounds = model.getBounds();
+                            // Print a full JSON representation for easier reading
+                            try {
+                                console.log('[Live2D] Model getBounds (json):', JSON.stringify(bounds));
+                            } catch (e) {
+                                console.log('[Live2D] Model getBounds (obj):', bounds);
+                            }
+
+                            // Also log more model metrics
+                            try {
+                                console.log('[Live2D] model.position:', model.position.x, model.position.y);
+                                console.log('[Live2D] model.width/height:', model.width, model.height);
+                                console.log('[Live2D] model.getLocalBounds():', model.getLocalBounds());
+                            } catch (e) {
+                                console.warn('[Live2D] model metric log failed', e);
+                            }
+
+                            // Remove previous debug if exists
+                            if (app.stage._debugBox) {
+                                try { app.stage.removeChild(app.stage._debugBox); app.stage._debugBox.destroy({ children: true }); } catch (_) { }
+                            }
+
+                            const g = new PIXI.Graphics();
+                            g.lineStyle(4, 0xff0000, 0.9);
+                            g.beginFill(0xff0000, 0.05);
+                            const x = Number(bounds.x) || 0;
+                            const y = Number(bounds.y) || 0;
+                            const w = Number(bounds.width) || (model.width || 0);
+                            const h = Number(bounds.height) || (model.height || 0);
+                            g.drawRect(x, y, w, h);
+                            g.endFill();
+                            g.zIndex = 1000;
+                            app.stage.addChild(g);
+                            app.stage._debugBox = g;
+
+                            // Draw a small green marker at model.position for visual center
+                            if (app.stage._debugMarker) {
+                                try { app.stage.removeChild(app.stage._debugMarker); app.stage._debugMarker.destroy({ children: true }); } catch (_) { }
+                            }
+                            const m = new PIXI.Graphics();
+                            m.beginFill(0x00ff00, 1);
+                            m.drawCircle(model.position.x, model.position.y, 8);
+                            m.endFill();
+                            m.zIndex = 1001;
+                            app.stage.addChild(m);
+                            app.stage._debugMarker = m;
+                        } catch (e) {
+                            console.warn('[Live2D] drawDebugBounds failed', e);
+                        }
+                    };
+
+                    // Draw immediately and again after a short delay (some resources finalize later)
+                    drawDebugBounds();
+                    setTimeout(drawDebugBounds, 500);
+                } catch (e) {
+                    console.warn('[Live2D] Debug helper failed', e);
+                }
+
+                // Debug: Check if model is actually visible
+                console.log('[Live2D] Model added to stage');
+                console.log('[Live2D] Model position:', model.position.x, model.position.y);
+                console.log('[Live2D] Model visible:', model.visible);
+                console.log('[Live2D] Model alpha:', model.alpha);
+                console.log('[Live2D] Model scale:', model.scale.x, model.scale.y);
+                console.log('[Live2D] Stage children:', app.stage.children.length);
+
+                // Check textures
+                if (model.internalModel && model.internalModel.textures) {
+                    console.log('[Live2D] Model has', model.internalModel.textures.length, 'textures');
+                    model.internalModel.textures.forEach((tex, i) => {
+                        console.log(`[Live2D] Texture ${i}:`, tex.width, 'x', tex.height, 'valid:', tex.valid);
+                    });
+                }
+
+                // Play idle motion if available
+                if (model.motion) {
+                    model.motion('Idle');
+                } else if (model.internalModel?.motionManager) {
+                    model.internalModel.motionManager.startMotion('Idle', 0, 3);
+                }
+
+                // 显示控制面板
+                document.getElementById('controls').style.display = 'flex';
+                updateStatus('✅ Live2D ready! Model is visible on screen.');
+
+                // Change background briefly to confirm rendering
+                setTimeout(() => {
+                    console.log('[Live2D] Flashing background to confirm visibility...');
+                    document.body.style.background = '#ff00ff';
+                    setTimeout(() => { document.body.style.background = '#1a1a2e'; }, 500);
+                }, 1000);
+
+                // Tap interaction
+                model.on('pointertap', () => {
+                    updateStatus('Model clicked!');
+                    if (model.motion) {
+                        model.motion('TapBody');
+                    } else if (model.internalModel?.motionManager) {
+                        model.internalModel.motionManager.startMotion('TapBody', 0, 3);
+                    }
+                });
+
+            } catch (error) {
+                updateStatus(`❌ Error: ${error.message}`);
+                console.error(error);
+            }
+        }
+
+        // Controls
+        function playMotion(motionName) {
+            if (!model) return;
+            if (model.motion) {
+                model.motion(motionName);
+                updateStatus(`Play motion: ${motionName}`);
+            } else if (model.internalModel?.motionManager) {
+                model.internalModel.motionManager.startMotion(motionName, 0, 3);
+                updateStatus(`Play motion: ${motionName}`);
+            } else {
+                updateStatus('Motion control not supported');
+            }
+        }
+
+        function changeExpression(exprName) {
+            if (!model) return;
+            if (model.expression) {
+                model.expression(exprName);
+                updateStatus(`Change expression: ${exprName}`);
+            } else if (model.internalModel?.expressionManager) {
+                const mgr = model.internalModel.expressionManager;
+                const idx = mgr.expressions?.findIndex(e => e?.name === exprName) ?? -1;
+                if (idx >= 0) {
+                    mgr.setExpression(mgr.expressions[idx]);
+                    updateStatus(`Change expression: ${exprName}`);
+                } else {
+                    updateStatus('Expression not found');
+                }
+            } else {
+                updateStatus('Expression control not supported');
+            }
+        }
+
+        // On page load
+        window.addEventListener('load', () => {
+            updateStatus('Page loaded');
+            console.log('[Live2D] Starting init...');
+            init().catch(err => {
+                updateStatus(`❌ Init error: ${err.message}`);
+                console.error('[Live2D] init() error:', err);
+            });
+        });
+
+        // 窗口大小调整：重置画布并复用对齐逻辑
+        window.addEventListener('resize', () => {
+            if (app && app.canvas) {
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+                app.view.width = width;
+                app.view.height = height;
+                try { app.renderer.resize(width, height); } catch (_) { }
+            }
+            if (app && model && typeof window._applyVerticalAlignment === 'function') {
+                try { window._applyVerticalAlignment(window.innerWidth, window.innerHeight); } catch (e) { console.warn('resize alignment failed', e); }
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,18 @@
+// 临时文件：用于生成纹理base64的代码片段
+// 在Flutter代码中运行后可获取base64编码的纹理
+
+import 'dart:convert';
+import 'package:flutter/services.dart';
+
+Future<void> getTexturesBase64() async {
+  final tex0 = await rootBundle.load('assets/live2d/hiyori/Hiyori.2048/texture_00.png');
+  final tex1 = await rootBundle.load('assets/live2d/hiyori/Hiyori.2048/texture_01.png');
+  
+  final base64_0 = base64Encode(tex0.buffer.asUint8List());
+  final base64_1 = base64Encode(tex1.buffer.asUint8List());
+  
+  print('TEX0 length: ${base64_0.length}');
+  print('TEX1 length: ${base64_1.length}');
+  
+  // 将这些base64字符串直接嵌入HTML
+}

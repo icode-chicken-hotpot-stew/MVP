@@ -7,18 +7,31 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
-/// Live2D 角色显示组件 - 嵌入式使用
+/// Live2D 角色显示组件
 /// 负责：
 /// - WebView 初始化和管理
-/// - Live2D Hiyori 模型加载和渲染
+/// - Live2D 模型加载和渲染
 /// - JavaScript 通道通信
 class CharacterView extends StatefulWidget {
-  /// 是否正在计时（用于后续扩展：active 时播放动作，idle 时播放待机）
+  /// 是否正在计时（用于扩展：active 时播放动作，idle 时播放待机）
   final bool isActive;
+  
+  /// 纹理文件路径列表（相对于 assets 目录）
+  /// 默认为 Hiyori 模型的纹理：texture_00.png, texture_01.png
+  final List<String> texturePaths;
+  
+  /// 模型基础路径（相对于 assets 目录）
+  /// 默认为 'live2d/hiyori/'
+  final String modelBasePath;
 
   const CharacterView({
     super.key,
     this.isActive = false,
+    this.texturePaths = const [
+      'live2d/hiyori/Hiyori.2048/texture_00.png',
+      'live2d/hiyori/Hiyori.2048/texture_01.png',
+    ],
+    this.modelBasePath = 'live2d/hiyori/',
   });
 
   @override
@@ -35,15 +48,15 @@ class _CharacterViewState extends State<CharacterView> {
   }
 
   Future<void> _initializeWebView() async {
+    // 创建 WebViewController
+    final controller = WebViewController();
+
     // 配置 Android WebView 以允许本地文件访问
-    final params = PlatformWebViewControllerCreationParams();
-    final WebViewController controller;
-    if (params is AndroidWebViewControllerCreationParams) {
-      controller = WebViewController.fromPlatformCreationParams(params);
+    if (controller.platform is AndroidWebViewController) {
       final androidController = controller.platform as AndroidWebViewController;
       androidController.setMediaPlaybackRequiresUserGesture(false);
-    } else {
-      controller = WebViewController.fromPlatformCreationParams(params);
+      // 设置 WebView 透明背景
+      androidController.setBackgroundColor(const Color(0x00000000)); // ARGB: 00=透明, 000000=黑色
     }
 
     _controller = controller
@@ -92,8 +105,6 @@ class _CharacterViewState extends State<CharacterView> {
             } else if (assetPath.endsWith('.jpg') ||
                 assetPath.endsWith('.jpeg')) {
               mimeType = 'image/jpeg';
-            } else if (assetPath.endsWith('.moc3')) {
-              mimeType = 'application/octet-stream';
             }
 
             await _controller.runJavaScript(
@@ -110,6 +121,7 @@ class _CharacterViewState extends State<CharacterView> {
         'Live2DController',
         onMessageReceived: (JavaScriptMessage message) {
           if (!mounted) return;
+          debugPrint('[Live2DController] ${message.message}');
         },
       )
       ..setNavigationDelegate(
@@ -126,20 +138,15 @@ class _CharacterViewState extends State<CharacterView> {
     // 预加载纹理并生成 base64，直接嵌入 HTML 占位符，确保脚本执行前即可使用
     Map<String, String> preloadedTextures = {};
     try {
-      final tex0 = await rootBundle.load(
-        'assets/live2d/hiyori/Hiyori.2048/texture_00.png',
-      );
-      final tex1 = await rootBundle.load(
-        'assets/live2d/hiyori/Hiyori.2048/texture_01.png',
-      );
-      
-      final tex0Base64 = base64Encode(tex0.buffer.asUint8List());
-      final tex1Base64 = base64Encode(tex1.buffer.asUint8List());
-      
-      preloadedTextures = {
-        'texture_00': 'data:image/png;base64,$tex0Base64',
-        'texture_01': 'data:image/png;base64,$tex1Base64',
-      };
+      for (int i = 0; i < widget.texturePaths.length; i++) {
+        final texturePath = widget.texturePaths[i];
+        final data = await rootBundle.load('assets/$texturePath');
+        final base64 = base64Encode(data.buffer.asUint8List());
+        
+        // 从路径获取纹理键名（例如 texture_00）
+        final fileName = texturePath.split('/').last.replaceAll('.png', '');
+        preloadedTextures[fileName] = 'data:image/png;base64,$base64';
+      }
     } catch (e) {
       debugPrint('[CharacterView] Failed to preload textures: $e');
     }
@@ -179,7 +186,7 @@ class _CharacterViewState extends State<CharacterView> {
 
     await _controller.loadHtmlString(
       modifiedHtml,
-      baseUrl: 'https://appassets.androidplatform.net/assets/live2d/',
+      baseUrl: 'https://appassets.androidplatform.net/assets/${widget.modelBasePath}',
     );
   }
 
@@ -190,6 +197,9 @@ class _CharacterViewState extends State<CharacterView> {
 
   @override
   Widget build(BuildContext context) {
-    return WebViewWidget(controller: _controller);
+    return Container(
+      color: Colors.transparent,
+      child: WebViewWidget(controller: _controller),
+    );
   }
 }

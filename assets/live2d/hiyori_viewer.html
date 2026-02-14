@@ -13,6 +13,10 @@
             box-sizing: border-box;
         }
 
+        html {
+            background: transparent;
+        }
+
         body {
             background: transparent;
             display: flex;
@@ -26,12 +30,14 @@
             position: relative;
             width: 100%;
             height: 100%;
+            background: transparent;
         }
 
         canvas {
             display: block;
             width: 100%;
             height: 100%;
+            background: transparent;
         }
     </style>
 
@@ -527,6 +533,12 @@
                     preserveDrawingBuffer: false,
                     powerPreference: 'high-performance'
                 });
+                
+                // 确保 canvas 元素完全透明
+                const canvas = document.getElementById('canvas');
+                if (canvas) {
+                    canvas.style.backgroundColor = 'transparent';
+                }
 
                 updateStatus('PIXI app created');
 
@@ -795,16 +807,7 @@
                     model.internalModel.motionManager.startMotion('Idle', 0, 3);
                 }
 
-                // 显示控制面板
-                document.getElementById('controls').style.display = 'flex';
                 updateStatus('✅ Live2D ready! Model is visible on screen.');
-
-                // Change background briefly to confirm rendering
-                setTimeout(() => {
-                    console.log('[Live2D] Flashing background to confirm visibility...');
-                    document.body.style.background = '#ff00ff';
-                    setTimeout(() => { document.body.style.background = '#1a1a2e'; }, 500);
-                }, 1000);
 
                 // Tap interaction
                 model.on('pointertap', () => {

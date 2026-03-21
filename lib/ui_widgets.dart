@@ -4,6 +4,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'app_controller.dart';
+import 'character_view.dart';
 
 // ==========================================
 // 2. 底部菜单栏 (DockBar)
@@ -237,35 +238,8 @@ class _UIWidgetsState extends State<UIWidgets> {
     return ValueListenableBuilder<bool>(
       valueListenable: widget.controller.isActive,
       builder: (context, active, _) {
-        // [DEBUG] 人物动画状态调试（后续换动画也能用）
         debugPrint('[DEBUG][CharacterStage] active=$active');
-
-        // 【布局调整】全屏人物背景
-        // 移除了原本的 Height:180 限制，改用 Container 填充
-        // 在 build 方法里会用 Positioned.fill 让它撑满屏幕
-        return Container(
-          width: double.infinity,
-          height: double.infinity, // 撑满
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
-            // 这里以后可以换成 DecorationImage(image: AssetImage(...), fit: BoxFit.cover)
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-               Text(
-                active ? '🏃' : '🧍',
-                style: const TextStyle(fontSize: 80), // 图标变大一点，配合全屏
-              ),
-              const SizedBox(height: 10),
-              Text(
-                active ? '小人：全屏跑步中' : '小人：全屏待机中',
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-              ),
-            ],
-          ),
-        );
+        return CharacterView(isActive: active);
       },
     );
   }

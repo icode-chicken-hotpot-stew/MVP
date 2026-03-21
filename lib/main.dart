@@ -43,8 +43,13 @@ class _MainStageState extends State<MainStage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/background.webp'),
+            fit: BoxFit.cover,
+          ),
+        ),
         child: UIWidgets(controller: controller),
       ),
     );

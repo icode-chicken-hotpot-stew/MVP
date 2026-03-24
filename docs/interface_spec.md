@@ -19,7 +19,7 @@
 | 动画引擎 | Live2D Cubism SDK |
 | 状态管理 | ValueNotifier + ChangeNotifier 混合方案 |
 | 本地存储 | SharedPreferences / Hive |
-| 协作工具 | Git (GitHub/Gitee) |
+| 协作工具 | Git (GitHub) |
 
 ### 1.3 文件架构
 ```

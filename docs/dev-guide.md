@@ -1,288 +1,342 @@
-# 开发指引 - Flutter 初学者入门
+# 开发指引 - 基于当前仓库状态
 
-> 本文档面向 Flutter 初学者，帮助团队成员快速上手项目开发。
+> 本文档面向 Flutter 初学者，帮助你基于当前代码库快速上手开发。内容已按仓库现状更新，旧的分工说明、本地绝对路径和过时实现已移除。
 
-## 1. 环境搭建
+## 1. 先理解当前项目是什么
 
-### 安装 Flutter SDK
+这是一个横屏陪伴学习类 Flutter MVP 项目。
 
-1. 下载 Flutter SDK：https://docs.flutter.dev/get-started/install/windows
-2. 解压到合适位置（如 `D:\flutter`）
-3. 添加 `D:\flutter\bin` 到系统环境变量 PATH
-4. 打开终端验证安装：
+当前默认入口是 `lib/main.dart`：
+
+- `main()` 启动 `MyApp`
+- `MyApp` 打开 `MainStage`
+- `MainStage` 创建并注入 `AppController`
+- `UIWidgets` 负责主界面展示与交互
+
+当前代码并不是“完整功能版”，而是“可运行的 MVP + 若干占位实现”。开始改代码前，先接受这几个现状：
+
+1. `lib/app_controller.dart` 已经定义了状态接口，但核心方法仍是空实现：
+   - `toggleTimer()`
+   - `resetTimer()`
+   - `fetchHistoryData()`
+2. `lib/ui_widgets.dart` 承担了当前大部分可见 UI 和交互。
+3. 顶部进度条目前使用 UI 内部的假进度动画驱动，不等于真实番茄钟进度。
+4. `lib/character_view.dart` 目前还是 stub，还没有真正接入角色动画。
+5. `lib/live2d.dart` 是独立实验原型，不是默认应用入口。
+6. Android 端已经被锁定为横屏。
+
+## 2. 环境准备
+
+### 安装 Flutter
+
+先按 Flutter 官方文档完成安装：
+
+- Windows: https://docs.flutter.dev/get-started/install/windows
+
+安装后在终端执行：
 
 ```bash
 flutter doctor
 ```
 
-看到�bindbindASI类似以下输出说明安装成功：
+建议至少保证以下能力可用：
 
-```
-[✓] Flutter (Channel stable, 3.x.x)
-[✓] Android toolchain
-[✓] Android Studio
-```
+- Flutter SDK
+- Android toolchain
+- 一个可用编辑器（VS Code 或 Android Studio）
+- 一台设备或模拟器
 
-### 安装 IDE 插件
+### 安装编辑器插件
 
-推荐使用 **VS Code** 或 **Android Studio**：
+推荐二选一：
 
 - VS Code：安装 `Flutter` 和 `Dart` 插件
-- Android Studio：安装 `Flutter` 插件（会自动安装 Dart）
+- Android Studio：安装 `Flutter` 插件（会自动带上 Dart）
 
-### 安装 Python 工具（可选但推荐）
+### 可选：安装 Python 工具链
 
-项目使用 Python 脚本来管理图片资源，建议安装：
+仓库里有图片处理和 pre-commit 相关脚本，建议安装：
 
-1. 安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)（Python 包管理器）：
-   ```bash
-   # Windows PowerShell
-   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-   ```
-
-2. 安装 pre-commit（Git 提交钩子工具）：
-   ```bash
-   uv tool install pre-commit
-   ```
-
-3. 在项目目录下激活钩子：
-   ```bash
-   cd d:/Program/ProgramStudy/icode/MVP
-   pre-commit install
-   ```
-
-> 💡 激活后，每次 `git commit` 时会自动检查并转换图片格式，无需手动操作。
-
-## 2. 运行项目
+1. 安装 `uv`
+2. 安装 `pre-commit`
+3. 在仓库根目录执行：
 
 ```bash
-# 1. 进入项目目录
-cd d:/Program/ProgramStudy/icode/MVP
+pre-commit install
+```
 
-# 2. 获取依赖包
+如果你使用 `uv` 安装工具，常见方式如下：
+
+```bash
+uv tool install pre-commit
+pre-commit install
+```
+
+## 3. 运行项目
+
+所有命令都在仓库根目录执行，不要再使用旧文档里的本地绝对路径。
+
+```bash
 flutter pub get
-
-# 3. 连接手机或启动模拟器，然后运行
 flutter run
 ```
 
-**热重载**：修改代码后，在终端按 `r` 键即可实时刷新界面，无需重启应用。
+如果你已经连接了多个设备，可以指定设备：
 
-## 3. 项目结构速览
-
+```bash
+flutter run -d <device-id>
 ```
+
+常用热更新：
+
+- 热重载：终端按 `r`
+- 热重启：终端按 `R`
+
+## 4. 当前项目结构
+
+```text
 lib/
-├── main.dart           # 入口文件 - 组长负责布局整合
-├── app_controller.dart # 逻辑中枢 - 组员 C 负责
-├── ui_widgets.dart     # UI 组件 - 组员 D 负责
-└── character_view.dart # 角色动画 - 组员 B 负责
+├── main.dart            # 默认应用入口，负责注入 AppController
+├── app_controller.dart  # 状态中枢，暴露 ValueNotifier 和行为接口
+├── ui_widgets.dart      # 当前主界面和大部分交互逻辑
+├── character_view.dart  # 角色动画层占位文件，当前基本未实现
+└── live2d.dart          # 独立实验性 Live2D 原型，不是默认入口
 ```
 
-## 4. Flutter 核心概念（5 分钟速成）
+此外还要知道：
 
-### Widget 是什么？
+- `assets/background.webp` 已在 `pubspec.yaml` 中注册
+- `android/app/src/main/AndroidManifest.xml` 中当前 Activity 被设置为横屏
+- `analysis_options.yaml` 目前只启用了 `flutter_lints`
 
-Flutter 里**一切都是 Widget**（组件）。按钮是 Widget，文字是 Widget，整个页面也是 Widget。
+## 5. 先掌握这个项目的状态流
 
-```dart
-// 一个简单的文本 Widget
-Text('你好世界')
+当前项目采用轻量的 controller / view 分层。
 
-// 一个按钮 Widget
-ElevatedButton(
-  onPressed: () { print('被点击了'); },
-  child: Text('点我'),
-)
-```
+### Controller 负责什么
 
-### StatelessWidget vs StatefulWidget
+`lib/app_controller.dart` 负责集中暴露状态，当前已有这些 `ValueNotifier`：
 
-| 类型 | 特点 | 使用场景 |
-|------|------|----------|
-| StatelessWidget | 静态的，不会变化 | 纯展示内容，如标题、图标 |
-| StatefulWidget | 动态的，可以变化 | 需要更新的内容，如计时器数字 |
+- `remainingSeconds`
+- `isActive`
+- `isDrawerOpen`
+- `currentDate`
 
-### 本项目的状态管理方式
+原则上：
 
-我们用 `ValueNotifier` + `ValueListenableBuilder` 来管理状态：
+- View 层只负责监听和展示
+- 状态修改应通过 Controller 方法触发
+- 不要在 UI 层直接把业务状态当成“单一事实来源”去改写
 
-```dart
-// 在 AppController 中定义状态（组员 C 负责）
-final remainingSeconds = ValueNotifier<int>(1500);
+### UI 目前是什么状态
 
-// 在 UI 中监听状态（组员 D 负责）
-ValueListenableBuilder<int>(
-  valueListenable: controller.remainingSeconds,
-  builder: (context, seconds, child) {
-    return Text('$seconds 秒');  // 当 seconds 变化时，这里会自动刷新
-  },
-)
-```
+`lib/ui_widgets.dart` 是当前最重要的文件，因为大部分界面都在这里。
 
-**重要原则**：UI 层只能**读取**状态，不能直接修改。要改状态，调用 Controller 的方法。
+它目前包含：
 
-## 5. 各组员开发指南
+- 底部 Dock 操作栏
+- 角色舞台占位
+- 顶部线性进度条
+- 统计弹窗占位
+- 若干硬编码文案和占位按钮
 
-### 组员 B - 角色动画
+特别注意：
 
-编辑 `lib/character_view.dart`，你需要：
+- 顶部 `LinearProgressIndicator` 当前绑定的是 `_fakeProgress`
+- `_fakeProgress` 由 `_fakeTimer` 每 100ms 增长一次
+- 它只是演示动画，不代表真实 25 分钟进度
+- Reset 按钮现在同时重置 controller 和 UI 假进度
 
-1. 监听 `isActive` 状态
-2. 根据状态切换角色的动画（学习中 / 休息中）
+如果你后续要实现真实计时逻辑，应该让 `AppController` 成为单一事实来源，并协调或移除这条假进度路径。
+
+## 6. 各核心文件应该怎么改
+
+### `lib/main.dart`
+
+这个文件现在主要做两件事：
+
+1. 创建 `AppController`
+2. 把它传给 `UIWidgets`
+
+一般不建议把大量业务逻辑继续堆到这里。
+
+### `lib/app_controller.dart`
+
+如果你负责逻辑层，优先在这里实现：
+
+- 开始/暂停计时
+- 重置计时
+- 历史数据读取
+- 后续对话状态或统计状态的统一管理
+
+当前这几个方法还是 TODO：
+
+- `toggleTimer()`
+- `resetTimer()`
+- `fetchHistoryData()`
+
+### `lib/ui_widgets.dart`
+
+如果你负责界面层，优先在这里处理：
+
+- 布局与样式
+- `ValueListenableBuilder` 监听状态后的渲染
+- 按钮点击后调用 controller 方法
+- 假数据/占位 UI 的逐步替换
+
+注意：
+
+- 不要把副作用写进 `build()`
+- 计时器、监听器的注册和销毁应放在生命周期里处理
+- 不要直接在 UI 层偷偷改 Controller 内部状态
+
+### `lib/character_view.dart`
+
+这个文件现在还没有实际角色动画实现。
+
+如果后续接入角色动画，建议方式是：
+
+- 由 `controller.isActive` 决定角色状态
+- 在 View 层根据状态切换待机 / 学习中动画
+
+### `lib/live2d.dart`
+
+这是实验性原型，当前需要特别注意：
+
+- 它不是默认入口
+- 它使用了 `webview_flutter` 和 `webview_flutter_android`
+- 但这两个依赖目前没有在 `pubspec.yaml` 中声明
+- Live2D 相关资源目前也没有注册到 `flutter.assets`
+
+因此，如果你运行 `flutter analyze` 或尝试切到这个原型，报错不一定和你当前正在改的主界面有关。
+
+## 7. 常用 Flutter 概念：只记本项目真正用到的
+
+### Widget
+
+Flutter 里界面都是 Widget 组成的。
+
+本项目里你最常看到的是：
+
+- `StatelessWidget`
+- `StatefulWidget`
+- `ValueListenableBuilder`
+
+### `ValueNotifier` + `ValueListenableBuilder`
+
+这是当前项目正在使用的状态管理方式。
+
+示例模式如下：
 
 ```dart
 ValueListenableBuilder<bool>(
   valueListenable: controller.isActive,
-  builder: (context, isActive, child) {
-    // isActive == true 表示正在计时，播放学习动画
-    // isActive == false 表示暂停，播放休息动画
-    return YourCharacterWidget(isStudying: isActive);
+  builder: (context, isActive, _) {
+    return Text(isActive ? '暂停中' : '未开始');
   },
 )
 ```
 
-### 组员 C - 逻辑中枢
+可以这样理解：
 
-编辑 `lib/app_controller.dart`，你需要实现：
+- `ValueNotifier` 保存状态
+- `ValueListenableBuilder` 监听状态变化并刷新 UI
 
-1. `toggleTimer()` - 开始/暂停计时器
-2. `resetTimer()` - 重置为 1500 秒
-3. 每秒递减 `remainingSeconds`
+## 8. 调试与检查
 
-```dart
-void toggleTimer() {
-  isActive.value = !isActive.value;
-  if (isActive.value) {
-    // 开始计时：每秒减 1
-    _timer = Timer.periodic(Duration(seconds: 1), (_) {
-      if (remainingSeconds.value > 0) {
-        remainingSeconds.value--;
-      } else {
-        // 时间到了，停止计时
-        isActive.value = false;
-        _timer?.cancel();
-      }
-    });
-  } else {
-    // 暂停计时
-    _timer?.cancel();
-  }
-}
-```
-
-### 组员 D - UI 交互
-
-编辑 `lib/ui_widgets.dart`，你需要：
-
-1. 显示倒计时数字和进度条
-2. 实现开始/暂停按钮
-3. 实现重置按钮
-
-```dart
-// 按钮点击时调用 Controller 的方法
-ElevatedButton(
-  onPressed: () => controller.toggleTimer(),
-  child: ValueListenableBuilder<bool>(
-    valueListenable: controller.isActive,
-    builder: (context, isActive, _) {
-      return Text(isActive ? '暂停' : '开始');
-    },
-  ),
-)
-```
-
-## 6. 常用调试技巧
-
-### 打印调试信息
-
-```dart
-print('当前秒数: ${remainingSeconds.value}');
-```
-
-在 VS Code 的 DEBUG CONSOLE 或终端中查看输出。
-
-### 热重载 vs 热重启
-
-- **热重载** (`r`)：保留应用状态，只刷新 UI。改 UI 时用这个。
-- **热重启** (`R`)：重置应用状态，重新运行。改逻辑时用这个。
-
-### 常见错误
-
-| 错误信息 | 原因 | 解决方案 |
-|----------|------|----------|
-| `No connected devices` | 没有连接设备 | 连接手机或启动模拟器 |
-| `Could not find a file named "pubspec.yaml"` | 目录不对 | cd 到项目根目录 |
-| `The method 'xxx' isn't defined` | 方法不存在 | 检查拼写，确认方法已定义 |
-
-## 7. 图片资源规范
-
-### 为什么用 WebP？
-
-项目统一使用 **WebP** 格式存放图片，原因：
-
-- 体积小：比 PNG 小 80%+，比 JPG 小 30%+
-- 质量好：支持透明度，画质损失小
-- 兼容性：Flutter 原生支持
-
-### 添加图片的正确姿势
-
-1. 把图片放到 `assets/` 目录下（任何格式都行）
-2. 在 `pubspec.yaml` 中注册资源路径
-3. 直接 `git commit`
-
-如果你添加的是 PNG 或 JPG，pre-commit 钩子会自动：
-1. 将图片转换为 WebP 格式
-2. 删除原始的 PNG/JPG 文件
-3. 更新暂存区
-
-你只需要**再执行一次 `git commit`** 即可完成提交。
-
-### 手动转换图片
-
-如果需要手动批量转换图片，可以使用脚本：
+### 静态检查
 
 ```bash
-# 转换所有超过 500KB 的 PNG/JPG 为 WebP，并删除原文件
-uv run scripts/compress_images.py --to-webp --delete
+flutter analyze
+```
 
-# 预览会被转换的文件（不实际执行）
+但请注意：当前仓库里可能存在历史遗留问题，尤其是 `lib/live2d.dart` 的依赖与资源声明不一致。因此 analyze 报错时，要先判断是不是你的改动引起的。
+
+### 测试
+
+```bash
+flutter test
+```
+
+当前仓库还没有成熟的测试目录，测试命令更像是后续补充测试时的基础入口。
+
+### 构建 APK
+
+```bash
+flutter build apk
+```
+
+## 9. 图片资源与提交流程
+
+项目里对图片资源有一套明确约束。
+
+### 当前已知情况
+
+- 主背景资源是 `assets/background.webp`
+- 仓库中配置了 pre-commit 图片检查流程
+- 已暂存的 PNG/JPG 可能会在提交时被自动转换为 WebP
+
+### 提交图片时要知道的事
+
+如果你把 PNG/JPG 放进 `assets/` 并提交，pre-commit 可能会：
+
+1. 自动转成 WebP
+2. 删除原始 PNG/JPG
+3. 重新加入暂存区
+4. 故意让本次 commit 失败一次
+
+这时不要慌，通常再执行一次 `git commit` 即可。
+
+### 手动处理图片
+
+```bash
 uv run scripts/compress_images.py --to-webp --dry-run
-
-# 只压缩图片（不转换格式）
+uv run scripts/compress_images.py --to-webp --delete
 uv run scripts/compress_images.py
 ```
 
-## 8. Git 协作流程
+### 新增资源别忘了注册
+
+新增 Flutter 资源后，记得检查 `pubspec.yaml` 是否已经注册；否则运行时可能找不到资源。
+
+## 10. Git 协作建议
+
+一个更贴近当前仓库的基本流程如下：
 
 ```bash
-# 1. 开始工作前，先拉取最新代码
 git pull origin main
-
-# 2. 创建自己的分支
-git checkout -b feat/你的功能名
-
-# 3. 写代码...
-
-# 4. 提交代码
-git add .
-git commit -m "feat: 你做了什么"
-
-# 5. 推送到远程
-git push origin feat/你的功能名
-
-# 6. 在 GitHub 上创建 Pull Request，等待组长合并
+git checkout -b feat/your-change
+flutter pub get
+# 开发并自测
+git add <相关文件>
+git commit -m "feat: 简述改动"
+git push origin feat/your-change
 ```
 
-## 9. 学习资源
+注意：
 
-- [Flutter 中文文档](https://flutter.cn/docs)
-- [Dart 语言入门](https://dart.cn/guides/language/language-tour)
-- [Flutter Widget 目录](https://flutter.cn/docs/reference/widgets)
+- 尽量只暂存你本次真正修改的文件
+- 不要沿用旧文档里的固定本地路径
+- 如果 pre-commit 改写了图片资源，检查结果后再重新提交
 
----
+## 11. 推荐优先看的文档
 
-## 10. 版本确认
+开始开发前，建议优先阅读：
 
+- `CLAUDE.md`：仓库级开发说明，和当前代码状态最一致
+- `docs/pomodoro_interface_spec.md`：番茄钟界面与假进度实现的现状说明
+- `docs/talking_interface_spec.md`：对话相关接口设想
 
+如果某份旧文档和代码冲突，请以当前代码实现为准。
 
-有问题随时在 Notion 里问，大家一起学习进步！💪
+## 12. 新同学最容易踩的坑
+
+1. 以为番茄钟已经有完整逻辑：其实 `AppController` 里的核心行为还是 TODO。
+2. 以为顶部进度条是真实倒计时：其实现在还是 UI 假动画。
+3. 以为 `character_view.dart` 已经能接角色动画：其实还没有正式实现。
+4. 以为 `live2d.dart` 是主入口：其实默认入口仍然是 `lib/main.dart`。
+5. 以为文档里的旧绝对路径还能直接用：现在统一以仓库根目录为准。
+
+## 13. 一句话总结
+
+如果你只想快速开始：先运行 `flutter pub get && flutter run`，然后优先阅读 `lib/main.dart`、`lib/app_controller.dart`、`lib/ui_widgets.dart` 这三个文件。

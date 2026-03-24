@@ -1,4 +1,4 @@
-# Interface Specification - 对话与 Tips 系统
+# 对话与 Tips 系统 - Interface Specification 
 
 > **版本**: v4.0  
 > **最后更新**: 2026.3.18  

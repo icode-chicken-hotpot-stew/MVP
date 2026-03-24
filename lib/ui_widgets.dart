@@ -3,16 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'app_controller.dart';
 //import 'character_view.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-// ==========================================
-// 【MVP原有逻辑/注释】保留：UI 组件模块 - 负责界面组件和交互
-// ==========================================
-
-/// 【V2复古风新增】将原来的 DockBar 废弃，改为散落四周的复古组件
-/*
-class DockBar extends StatelessWidget { ... } // 原MVP DockBar 已停用
-*/
 
 /// 前端交互面板：监听状态并更新 UI 面板与统计图表
 class UIWidgets extends StatefulWidget {
@@ -95,8 +86,6 @@ class _UIWidgetsState extends State<UIWidgets> {
       _isStatsExpanded = false;
       _isExpExpanded = false;
       _isMusicExpanded = false;
-      // 注意：这里已经把你之前误放的 _isMusicPlaying 删掉了。
-      // 我们不希望点空白处就打断音乐播放。
     });
   }
 
@@ -233,7 +222,7 @@ class _UIWidgetsState extends State<UIWidgets> {
           ),
         ),
         
-        // 下拉活页便签磁贴 (现已改为深色复古皮革)
+        // 下拉活页便签磁贴 (现已改为浅色便签纸)
         AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           // 【核心修复】将 easeOutBack 改为 easeOut，去掉回弹效果，杜绝负数引发红屏
@@ -243,41 +232,39 @@ class _UIWidgetsState extends State<UIWidgets> {
           margin: EdgeInsets.only(top: _isTomatoExpanded ? 10 : 0),
           clipBehavior: Clip.hardEdge, 
           decoration: BoxDecoration(
-            // 【皮革质感修改】换成深棕色皮革底色
-            color: const Color(0xFF2E1B15), 
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              // 【皮革质感修改】边框做成类似皮革缝线的深色
-              color: _isTomatoExpanded ? const Color(0xFF4A3026) : Colors.transparent, 
-              width: 2
-            ), 
+            // 【便签质感修改】换成白底便签图片
+            image: _isTomatoExpanded ? const DecorationImage(
+              image: AssetImage('assets/images/memo_bg.png'), // 替换为你的便签图片
+              fit: BoxFit.fill,
+            ) : null,
+           
             // 【核心修复】保持两边都有 BoxShadow 对象，只让透明度和 blurRadius 归零，动画更丝滑
-            boxShadow: [
-              BoxShadow(
-                // 【皮革质感修改】加重阴影，让皮革显得更厚重
-                color: _isTomatoExpanded ? Colors.black54 : Colors.transparent,
-                blurRadius: _isTomatoExpanded ? 10.0 : 0.0,
-                offset: const Offset(0, 6)
-              )
-            ],
+            // boxShadow: [
+              // BoxShadow(
+              //   // 【便签阴影】便签的阴影稍微轻巧一点
+              //   color: _isTomatoExpanded ? Colors.black26 : Colors.transparent,
+              //   blurRadius: _isTomatoExpanded ? 8.0 : 0.0,
+              //   offset: const Offset(0, 4)
+              // )
+            // ],
           ),
           child: SingleChildScrollView(
             // 【优化】防止在收起面板的时候手误滑动内容导致溢出
             physics: const NeverScrollableScrollPhysics(), 
             child: Column(
               children: [
-                const SizedBox(height: 20),
+                const SizedBox(height: 33),
                 // 红色圆框进度条
                 Stack(
                   alignment: Alignment.center,
                   children: [
                     SizedBox(
-                      width: 80, height: 80,
+                      width: 70, height: 70,
                       child: CircularProgressIndicator(
                         value: _fakeProgress,
-                        // 【适配皮革】背景深色，所以轨道换成暗红，进度条换成亮金/亮橘
-                        color: const Color(0xFFD4AF37), // 亮金色进度
-                        backgroundColor: const Color.fromARGB(255, 164, 24, 6), // 暗红色轨道
+                        // 【适配便签】底色变浅了，这里的颜色换回复古红和深灰
+                        color: const Color.fromARGB(255, 204, 196, 195), // 白色进度
+                        backgroundColor: const Color.fromARGB(255, 179, 22, 22), // 红色初始轨道
                         strokeWidth: 6,
                       ),
                     ),
@@ -286,27 +273,27 @@ class _UIWidgetsState extends State<UIWidgets> {
                       valueListenable: widget.controller.remainingSeconds,
                       builder: (context, seconds, _) {
                         final time = "${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}";
-                        // 【适配皮革】文字颜色改为浅金色，不然在黑背景下看不见
-                        return Text(time, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFF3E5AB)));
+                        // 【适配便签】文字颜色改为深棕色，在白底便签上才清晰
+                        return Text(time, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF5D4037)));
                       },
                     ),
                   ],
                 ),
-                const SizedBox(height: 15),
+                const SizedBox(height: 5),
                 // 控制按钮：播放/重置
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IconButton(
                       icon: Icon(widget.controller.isActive.value ? Icons.pause : Icons.play_arrow, size: 28),
-                      // 【适配皮革】图标颜色改为浅金色
-                      color: const Color(0xFFF3E5AB),
+                      // 【适配便签】图标颜色改为深棕色
+                      color: const Color(0xFF5D4037),
                       onPressed: () => widget.controller.toggleTimer(),
                     ),
                     IconButton(
                       icon: const Icon(Icons.refresh), 
-                      // 【适配皮革】图标颜色改为浅金色
-                      color: const Color(0xFFF3E5AB),
+                      // 【适配便签】图标颜色改为深棕色
+                      color: const Color(0xFF5D4037),
                       onPressed: () {
                         widget.controller.resetTimer();
                         _resetFakeProgress();
@@ -442,114 +429,109 @@ class _UIWidgetsState extends State<UIWidgets> {
           ),
         ),
         // ==============================
-        // 【修改这里】：使用 Visibility 包裹 AnimatedContainer
+        // 【修改这里】：去掉会导致动画失效的 Visibility！
         // ==============================
         // 黑板下拉磁贴
-        Visibility(
-          visible: _isStatsExpanded, // 只有当展开状态时才显示，解决折叠后的渲染伪影
-          // 【本次新增】用 Transform 强行控制整体面板位置！改 y 的负值就能往上提！
-          child: Transform.translate(
-            offset: const Offset(0, -40), // 👈想往上拉就改这个 -10，比如改成 -20
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              // 【核心修复】把 easeOutBack 改成了 easeOut，防止负数高度引发红屏！！！
-              curve: Curves.easeOut,
-              // 【注意】：因为外面加了 Visibility，当visible为false时组件直接消失。
-              // 这里的 height 不需要设为 0 了，直接设为展开后的最终高度。
-              // 当 _isStatsExpanded 变为 true 时，Visibility 显示组件，
-              // AnimatedContainer 会执行高度从 0 到设定值的动画。
-              
-              // 【本次修改】黑板尺寸超级加倍！高度 -> 280, 宽度 -> 320 (如果不够继续加大)
-              height: _isStatsExpanded ? 280 : 0, 
-              width: 320,
-              // 【本次修改】把原本的 top: 10 改成了 top: 0，配合外面的 Transform 往上提
-              margin: const EdgeInsets.only(top: 0),
-              decoration: BoxDecoration(
-                // 【本次修改】底板换成展开的黑板图片
-                image: _isStatsExpanded ? const DecorationImage(
-                  image: AssetImage('assets/images/board_panel.png'), // 替换为生成的大黑板图片
-                  fit: BoxFit.fill,
-                ) : null,
-                // color: const Color(0xFF2E3B32),
-                // borderRadius: BorderRadius.circular(8),
-                // border: Border.all(color: Colors.brown[400]!, width: 4),
-                // 【本次修改】黑影被我彻底删除了！！！干干净净！！！
-              ),
-              child: _isStatsExpanded ? Stack(
-                children: [
-                  Padding(
-                    // 【本次修改】内边距也跟着变大，给厚重木边框留足空间
-                    // 👈【修改点 1：整体往下挪】把 top 从 45.0 加大到了 70.0！
-                  // 如果还嫌高，就继续加大这个 70.0；如果太低了就减小。
-                    padding: const EdgeInsets.only(left: 50.0, top: 70.0, right: 30.0, bottom: 20.0), 
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 模拟粉笔字
-                        Text(
-                          "今日专注：1.5 hrs", 
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.85), // 【粉笔特效】微透明
-                            fontSize: 19, // 【本次修改】字号调大
-                            fontFamily: 'ZhuoKai', // 👈【修改点】换成了工整字体（记得按下方教程配）
-                            shadows: const [BoxShadow(color: Colors.white38, blurRadius: 3)] // 【粉笔特效】粉尘发光
-                          )
-                        ), 
-                            // 👈【修改点 2：让两行字挨近点】把 height 从 15 缩小到了 6！
-                      // 如果你想让它们几乎贴在一起，可以改成 2 甚至 0。
-                        const SizedBox(height: 6),
-                        Text(
-                          "累计天数：7 days", 
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.85),
-                            fontSize: 19, 
-                            fontFamily: 'ZhuoKai', // 👈【修改点】换成了工整字体
-                            shadows: const [BoxShadow(color: Colors.white38, blurRadius: 3)]
-                          )
-                        ),
-                      ],
-                    ),
-                  ),
-                  // 小板擦（分享按钮）
-                  Positioned(
-                    // 👈【核心修改】：这里 bottom 从 25 改成了 48！如果还嫌低，继续加大这个值！
-                    bottom: 48, right: 35, 
-                    child: GestureDetector(
-                      onTap: () {
-                        // 【MVP原有逻辑】保留：复用分享卡片弹窗
-                        _showShareCard(context, widget.controller);
-                      },
-                      // 【本次修改】把板擦和文字拆开，上下排列！
+        Transform.translate(
+          offset: const Offset(0, -40), // 往上提，掩盖在按钮后方
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+            // 【核心动画逻辑】这里加入 topCenter 甚至 topRight 对齐，
+            // 配合 hardEdge 裁剪，就能模拟出从边缘拉出的完美手感！
+            alignment: Alignment.topRight, 
+            height: _isStatsExpanded ? 240 : 0, 
+            width: 280,
+            clipBehavior: Clip.hardEdge, // 必须加这个，配合 height 产生拉出效果
+            margin: const EdgeInsets.only(top: 0),
+            decoration: BoxDecoration(
+              // 【本次修改】底板换成展开的黑板图片
+              image: _isStatsExpanded ? const DecorationImage(
+                image: AssetImage('assets/images/board_panel.png'), // 替换为生成的大黑板图片
+                fit: BoxFit.fill,
+              ) : null,
+              // color: const Color(0xFF2E3B32),
+              // borderRadius: BorderRadius.circular(8),
+              // border: Border.all(color: Colors.brown[400]!, width: 4),
+              // 【本次修改】黑影被我彻底删除了！！！干干净净！！！
+            ),
+            // 使用 SingleChildScrollView 防止高度为 0 时内部组件报溢出错误
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: SizedBox(
+                height: 280, // 撑满最终高度，让外层去裁剪它
+                width: 320,
+                child: Stack(
+                  children: [
+                    Padding(
+                      // 【本次修改】内边距也跟着变大，给厚重木边框留足空间
+                      padding: const EdgeInsets.only(left: 50.0, top: 50.0, right: 30.0, bottom: 20.0), 
                       child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 分享文字在上方，也是粉笔质感
+                          // 模拟粉笔字
                           Text(
-                            "分享", 
+                            "今日专注：1.5 hrs", 
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.9), 
-                              fontSize: 16, 
-                              fontFamily: 'ZhuoKai', // 👈这里也换成了工整字体
-                              shadows: const [BoxShadow(color: Colors.white38, blurRadius: 2)]
+                              color: Colors.white.withOpacity(0.85), // 【粉笔特效】微透明
+                              fontSize: 19, // 【本次修改】字号调大
+                              fontFamily: 'ZhuoKai', // 换成了工整字体（记得按下方教程配）
+                              shadows: const [BoxShadow(color: Colors.white38, blurRadius: 3)] // 【粉笔特效】粉尘发光
                             )
-                          ),
-                          const SizedBox(height: 4), // 字和板擦之间的缝隙
-                          // 无字板擦在下方
-                          Container(
-                            width: 55, height: 35, // 给板擦定个大小
-                            decoration: const BoxDecoration(
-                              image: DecorationImage(
-                                image: AssetImage('assets/images/eraser_btn.png'), // 替换为板擦图片
-                                fit: BoxFit.fill,
-                              ),
-                            ),
+                          ), 
+                          const SizedBox(height: 6),
+                          Text(
+                            "累计天数：7 days", 
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.85),
+                              fontSize: 19, 
+                              fontFamily: 'ZhuoKai', // 换成了工整字体
+                              shadows: const [BoxShadow(color: Colors.white38, blurRadius: 3)]
+                            )
                           ),
                         ],
                       ),
                     ),
-                  )
-                ],
-              ) : const SizedBox(),
+                    // 小板擦（分享按钮）
+                    Positioned(
+                      bottom: 70, right: 35, 
+                      child: GestureDetector(
+                        onTap: () {
+                          // 【MVP原有逻辑】保留：复用分享卡片弹窗
+                          _showShareCard(context, widget.controller);
+                        },
+                        // 【本次修改】把板擦和文字拆开，上下排列！
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // 分享文字在上方，也是粉笔质感
+                            Text(
+                              "分享", 
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.9), 
+                                fontSize: 15, 
+                                fontFamily: 'ZhuoKai', // 这里也换成了工整字体
+                                shadows: const [BoxShadow(color: Colors.white38, blurRadius: 2)]
+                              )
+                            ),
+                            const SizedBox(height: 4), // 字和板擦之间的缝隙
+                            // 无字板擦在下方
+                            Container(
+                              width: 55, height: 35, // 给板擦定个大小
+                              decoration: const BoxDecoration(
+                                image: DecorationImage(
+                                  image: AssetImage('assets/images/eraser_btn.png'), // 替换为板擦图片
+                                  fit: BoxFit.fill,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -628,10 +610,7 @@ class _UIWidgetsState extends State<UIWidgets> {
     );
   }
 
-  // ==========================================
-  // 【MVP原有逻辑】底部弹窗等占位保持不动
-  // ==========================================
-    // ==========================================
+  
   // 【对接队友接口】人物动画层
   // ==========================================
   // Widget _buildCharacterStage(BuildContext context) {
@@ -641,22 +620,36 @@ class _UIWidgetsState extends State<UIWidgets> {
   //       // [DEBUG] 队友加的调试打印保留
   //       debugPrint('[DEBUG][CharacterStage] active=$active');
         
-  //       // ✅ 直接调用队友写好的 CharacterView，传入 active 状态
+  //       // ✅ 直接调用写好的 CharacterView，传入 active 状态
   //       return CharacterView(isActive: active); 
   //     },
   //   );
   // }
-    // ==========================================
-  // 【动画临时占位】
+  
+  // ==========================================
+  // 【动画临时占位】 - 现已加入全屏背景大图！
   // ==========================================
   Widget _buildCharacterStage(BuildContext context) {
     return Container(
-      color: const Color(0xFFEFEBE9), // 给个复古的浅棕底色，护眼又契合主题
+      // 【背景图加入点】在这里加上背景图片
+      decoration: const BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage('assets/images/background.webp'), // 注意后缀规范哦
+          fit: BoxFit.cover, // 让背景图铺满整个屏幕
+          alignment: Alignment.bottomCenter, // 如果依然用 cover，打开这行可以优先显示底部
+        ),
+      ),
       alignment: Alignment.center,
       child: const Text(
         "小人动画施工中...\n(咱们先把复古 UI 跑通)",
         textAlign: TextAlign.center,
-        style: TextStyle(color: Colors.brown, fontSize: 18, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: Colors.brown, 
+          fontSize: 18, 
+          fontWeight: FontWeight.bold,
+          // 如果背景太花，可以给这行占位字加个浅色阴影发光，保证你看得清
+          shadows: [BoxShadow(color: Colors.white, blurRadius: 10)] 
+        ),
       ),
     );
   }
@@ -786,7 +779,5 @@ class _ChatBubbleState extends State<ChatBubble> {
     );
   }
 }
-
-
 
 

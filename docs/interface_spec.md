@@ -1,9 +1,11 @@
 # 陪伴学习软件 - 项目接口规范手册
 
-> **版本**: v5.0  
-> **最后更新**: 2026.3.23
-> **适用对象**: 开发团队成员、AI 助手 (Claude)  
+> **版本**: v5.1
+> **最后更新**: 2026.3.24
+> **适用对象**: 开发团队成员、AI 助手 (Claude)
 > **协作原则**: 接口契约优先，模块内部实现自治
+>
+> **状态说明**: 本文档保留为跨模块历史蓝图/协作草案。当前番茄钟后端实现、状态机和联调边界，请优先参考 `docs/pomodoro_interface_spec.md`、`docs/pomodoro_state_flow.md`、`docs/pomodoro_integration_rules.md`、`docs/番茄钟功能简要.md` 与当前代码实现。
 
 ---
 
@@ -26,7 +28,7 @@
 lib/
 ├── main.dart                 # 全栈架构师 (组长)
 ├── app_controller.dart       # 系统后端工程师 (组员 C)
-├── ui_widget.dart            # 前端交互工程师 (组员 D)
+├── ui_widgets.dart            # 前端交互工程师 (组员 D)
 ├── character_view.dart       # 图形引擎工程师 (组员 B)
 └── models/
     └── user_stats.dart       # 数据模型定义 (共享)
@@ -46,7 +48,7 @@ assets/
 ```mermaid
 graph TB
     A[main.dart<br/>组长整合] --> B[app_controller.dart<br/>逻辑中枢 C]
-    B --> C[ui_widget.dart<br/>前端 D]
+    B --> C[ui_widgets.dart<br/>前端 D]
     B --> D[character_view.dart<br/>动画 B]
     
     style B fill:#f9f,stroke:#333
@@ -186,7 +188,7 @@ notifyListeners();  // 手动通知监听者
 
 ---
 
-### 4.2 前端模块 (ui_widget.dart) - 组员 D
+### 4.2 前端模块 (ui_widgets.dart) - 组员 D
 
 **职责**: UI 展示、用户交互捕获
 
@@ -380,7 +382,7 @@ stateDiagram-v2
 | Ⅱ | 番茄钟任务完成 | studying→resting | completed | app_controller.dart (C) | `finishFocus()` |
 | Ⅲ | 用户空闲超时 | resting | idle | app_controller.dart (C) | `triggerDialogue("idle")` |
 | Ⅳ | App 离开重进 (仍在专注) | studying | resume | main.dart (组长) | `handleAppResume()` |
-| Ⅴ | 开始专注 | resting→studying | start_focus | ui_widget.dart (D) | `startFocus()` |
+| Ⅴ | 开始专注 | resting→studying | start_focus | ui_widgets.dart (D) | `startFocus()` |
 
 ### 5.3 App 返回时的状态同步
 | 返回时状态 | 时间判断 | 预期行为 | 对话触发 |
@@ -395,10 +397,10 @@ stateDiagram-v2
 
 | 优先级 | 点击区域 | 预期行为 | 负责模块 |
 | :--- | :--- | :--- | :--- |
-| P1 (最高) | Skip 按钮 | `skipDialogue()` | ui_widget.dart |
-| P2 | UI 功能按钮 | 执行按钮逻辑 (对话保持) | ui_widget.dart |
+| P1 (最高) | Skip 按钮 | `skipDialogue()` | ui_widgets.dart |
+| P2 | UI 功能按钮 | 执行按钮逻辑 (对话保持) | ui_widgets.dart |
 | P3 | 角色点击 | `triggerDialogue("clicked")` (仅 resting 状态) | character_view.dart |
-| P4 (最低) | 空白区域 | `nextDialogue()` | ui_widget.dart |
+| P4 (最低) | 空白区域 | `nextDialogue()` | ui_widgets.dart |
 
 ---
 
@@ -433,7 +435,7 @@ flutter:
 | 对话队列索引超出范围 | 自动调用 `skipDialogue()` | app_controller.dart |
 | 对话中触发新对话 | 打断当前对话，加载新队列 | app_controller.dart |
 | JSON 文件加载失败 | 使用默认备用文本 | app_controller.dart |
-| 对话中 UI 按钮点击 | 按钮逻辑执行 + 对话保持 | ui_widget.dart |
+| 对话中 UI 按钮点击 | 按钮逻辑执行 + 对话保持 | ui_widgets.dart |
 | 对话中角色点击 | 无响应 (对话中禁用) | character_view.dart |
 | App 后台切换 | 保持对话状态不变 | app_controller.dart |
 | 专注中触发对话 | 忽略，不触发 (resume 除外) | app_controller.dart |

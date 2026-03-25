@@ -1,556 +1,488 @@
-# 对话与 Tips 系统 - Interface Specification 
+# 对话与 Tips 系统 Specification
 
-> **版本**: v4.0  
-> **最后更新**: 2026.3.18  
-> **适用模块**: 对话系统 (Dialogue & Tips System)  
-> **架构模式**: ValueNotifier + ChangeNotifier 混合状态管理 + 模块化分工  
-> **协作原则**: 接口契约优先，模块内部实现自治
-
----
-
-## 1. 系统概述 (System Overview)
-
-### 1.1 功能描述
-在合适的业务场景下，通过前端 UI 气泡展示对话内容，提供自律 Tips 和情感陪伴。**对话框由前端独立渲染，与动画模块解耦**。
-
-### 1.2 业务状态 (Business State)
-| 状态       | 说明            | 冷启动默认 |
-| :--------- | :-------------- | :--------- |
-| `resting`  | 休息状态/未开始 | ✅ 是       |
-| `studying` | 专注状态        | ❌ 否       |
-
-**注意**: 已移除 `idle` 状态，冷启动直接进入 `resting`。
-
-### 1.3 触发条件
-| ID   | 触发场景                    | 检测模块              | 对话类型      | 优先级 |
-| :--- | :-------------------------- | :-------------------- | :------------ | :----- |
-| Ⅰ    | 角色被点击                  | `character_view.dart` | `clicked`     | P3     |
-| Ⅱ    | 番茄钟任务完成              | `app_controller.dart` | `completed`   | P1     |
-| Ⅲ    | 用户空闲超时                | `app_controller.dart` | `idle`        | P4     |
-| Ⅳ    | App 离开重进 (仍在专注)     | `main.dart` (组长)    | `resume`      | P2     |
-| Ⅴ    | 开始专注 (resting→studying) | `app_controller.dart` | `start_focus` | P1     |
-
-### 1.4 对话类型说明
-| 对话类型      | 触发时机                  | 示例文本                         |
-| :------------ | :------------------------ | :------------------------------- |
-| `start_focus` | 从 resting 进入 studying  | "好的，开始工作咯！"             |
-| `completed`   | studying 结束进入 resting | "好耶，专注成功！休息一下吧。"   |
-| `resume`      | App 返回时仍在专注时间内  | "让我们接着工作吧！"             |
-| `clicked`     | 角色被点击 (resting 状态) | "你好呀~ 今天也要加油哦！"       |
-| `idle`        | resting 状态空闲超时      | "你知道吗？多喝水有助于专注哦。" |
+> **版本**: v5.1
+> **最后更新**: 2026.3.24
+> **适用范围**: 对话气泡、Tips 展示、与番茄钟状态联动
+> **文档定位**: 说明这个功能要做什么、当前系统长什么样、后续实现时需要兼容哪些接口与约束
 
 ---
 
-## 2. 状态管理架构 (State Management Architecture)
+## 1. 文档目的
 
-### 2.1 混合方案说明
+本文档用于回答 3 个问题：
 
-| 状态类型         | 技术方案           | 适用场景               | 所属模块                     |
-| :--------------- | :----------------- | :--------------------- | :--------------------------- |
-| **简单值状态**   | `ValueNotifier<T>` | 倒计时、布尔开关、数值 | `app_controller.dart` (现有) |
-| **复杂交互状态** | `ChangeNotifier`   | 对话系统、多变量关联   | `app_controller.dart` (新增) |
+1. **这个功能要实现什么需求**
+2. **当前仓库里的相关系统现状是什么**
+3. **后续接入时必须兼容哪些现有接口与结构**
 
-### 2.2 状态变量分类
-
-#### 2.2.1 ValueNotifier 状态 (现有，组员 C 维护)
-| 变量名             | 类型                    | 说明           |
-| :----------------- | :---------------------- | :------------- |
-| `remainingSeconds` | `ValueNotifier<int>`    | 倒计时秒数     |
-| `isActive`         | `ValueNotifier<bool>`   | 计时器运行状态 |
-| `isDrawerOpen`     | `ValueNotifier<bool>`   | 上拉菜单状态   |
-| `currentDate`      | `ValueNotifier<String>` | 当前日期       |
-
-#### 2.2.2 ChangeNotifier 状态 (新增，对话系统)
-| 变量名            | 类型        | 说明                        | 持久化       |
-| :---------------- | :---------- | :-------------------------- | :----------- |
-| `isTalking`       | `bool`      | 是否处于对话状态            | ❌            |
-| `currentDialogue` | `String`    | 当前显示的对话文本          | ❌            |
-| `tomatoState`     | `enum`      | 业务状态 (studying/resting) | ❌            |
-| `focusStartTime`  | `DateTime?` | 专注开始时间戳              | ✅ (本地存储) |
+本文档**不是当前已实现功能的说明书**，也**不是详细实现方案**。如果文档中的“目标能力”与当前代码不一致，应以“当前状态”章节和实际代码为准。
 
 ---
 
-## 3. 模块接口定义 (Module Interfaces)
+## 2. 功能目标（做什么）
 
-### 3.1 后端模块 (app_controller.dart) - 组员 C
+### 2.1 目标
 
-**职责**: 状态源 (Single Source of Truth)、对话逻辑、数据加载
+对话与 Tips 系统的目标是：
 
-#### 3.1.1 类定义 (混合方案)
-```dart
-class AppController extends ChangeNotifier {
-  // ============ ValueNotifier 状态 (现有) ============
-  final ValueNotifier<int> remainingSeconds;
-  final ValueNotifier<bool> isActive;
-  final ValueNotifier<bool> isDrawerOpen;
-  final ValueNotifier<String> currentDate;
-  
-  // ============ ChangeNotifier 状态 (对话系统新增) ============
-  bool _isTalking = false;
-  String _currentDialogue = '';
-  TomatoState _tomatoState = TomatoState.resting;  // 冷启动默认 resting
-  DateTime? _focusStartTime;  // 专注开始时间戳 (持久化)
-  
-  // ============ 状态读取接口 (Getter) ============
-  bool get isTalking => _isTalking;
-  String get currentDialogue => _currentDialogue;
-  TomatoState get tomatoState => _tomatoState;
-  DateTime? get focusStartTime => _focusStartTime;
-  
-  // ============ 状态变更接口 (Public Methods) ============
-  void triggerDialogue(String type);
-  void nextDialogue();
-  void skipDialogue();
-  void setTomatoState(TomatoState newState);
-  void handleAppResume();
-  void startFocus();  // 开始专注 (resting → studying)
-  void finishFocus(); // 完成专注 (studying → resting)
-  
-  // ============ 生命周期接口 (Lifecycle) ============
-  Future<void> loadData();   // 从本地存储加载
-  Future<void> saveData();   // 保存到本地存储
-  
-  // ============ 资源释放 ============
-  void dispose() {
-    remainingSeconds.dispose();
-    isActive.dispose();
-    isDrawerOpen.dispose();
-    currentDate.dispose();
-    super.dispose();  // ChangeNotifier 释放
-  }
-}
-```
+- 在合适的业务时机展示角色气泡文案
+- 为用户提供轻量提示、鼓励和陪伴感
+- 与番茄钟状态联动，但**不替代番茄钟主流程**
+- 在不破坏当前 MVP 结构的前提下，为后续角色动画、文案资源和交互扩展预留接入点
 
-#### 3.1.2 接口行为规格
-| 方法名            | 参数                    | 返回值         | 副作用                             | 调用方       |
-| :---------------- | :---------------------- | :------------- | :--------------------------------- | :----------- |
-| `triggerDialogue` | `type: String`          | `void`         | 加载队列、`notifyListeners()`      | B / C / main |
-| `nextDialogue`    | 无                      | `void`         | 索引++、`notifyListeners()`        | D            |
-| `skipDialogue`    | 无                      | `void`         | 重置状态、`notifyListeners()`      | D            |
-| `setTomatoState`  | `newState: TomatoState` | `void`         | 状态变更、`notifyListeners()`      | D / main     |
-| `handleAppResume` | 无                      | `void`         | 时间同步、`notifyListeners()`      | main         |
-| `startFocus`      | 无                      | `void`         | 进入 studying、`notifyListeners()` | D            |
-| `finishFocus`     | 无                      | `void`         | 进入 resting、`notifyListeners()`  | C (计时器)   |
-| `loadData`        | 无                      | `Future<void>` | 从本地存储加载                     | main         |
-| `saveData`        | 无                      | `Future<void>` | 保存到本地存储                     | C 内部       |
+### 2.2 目标场景
 
-#### 3.1.3 状态变更通知机制
-```dart
-// ValueNotifier 状态变更
-remainingSeconds.value = newValue;  // 自动通知监听者
+系统需要覆盖以下触发场景：
 
-// ChangeNotifier 状态变更
-_isTalking = true;
-notifyListeners();  // 手动通知监听者
-```
+| 触发类型 | 触发时机 | 目标效果 |
+| :-- | :-- | :-- |
+| `clicked` | 用户点击角色 | 显示一条互动文案 |
+| `start_focus` | 用户开始专注 | 显示开始专注提示 |
+| `completed` | 一轮专注完成 | 显示完成提示 |
+| `resume` | App 返回且仍处于专注流程中 | 显示恢复提示 |
+| `idle` | 用户长时间无操作 | 显示 Tips 或提醒 |
 
-#### 3.1.4 对话优先级规则
-| 业务状态               | 允许触发对话 | 说明                             |
-| :--------------------- | :----------- | :------------------------------- |
-| `TomatoState.resting`  | ✅            | 休息状态，允许对话               |
-| `TomatoState.studying` | ❌            | 专注中，禁止新对话 (resume 除外) |
+### 2.3 非目标
 
-#### 3.1.5 业务状态流转规则
-```dart
-// 开始专注 (resting → studying)
-void startFocus() {
-  if (_tomatoState == TomatoState.resting) {
-    _focusStartTime = DateTime.now();
-    _tomatoState = TomatoState.studying;
-    _triggerDialogue('start_focus');
-    notifyListeners();
-    saveData();
-  }
-}
+本 spec 不定义以下内容：
 
-// 完成专注 (studying → resting)
-void finishFocus() {
-  if (_tomatoState == TomatoState.studying) {
-    _tomatoState = TomatoState.resting;
-    _triggerDialogue('completed');
-    notifyListeners();
-    saveData();
-  }
-}
+- Live2D 动作细节
+- 文案生成策略
+- JSON 文件最终格式细节
+- 持久化实现方式
+- 番茄钟主状态机本身
 
-// App 返回处理
-void handleAppResume() {
-  if (_tomatoState == TomatoState.studying && _focusStartTime != null) {
-    final elapsed = DateTime.now().difference(_focusStartTime!);
-    final remaining = _focusDuration - elapsed;
-    
-    if (remaining > Duration.zero) {
-      // 情况 1: 仍在专注时间内
-      _triggerDialogue('resume');
-    } else {
-      // 情况 2 & 3: 已进入休息/超时
-      finishFocus();  // 自动完成本轮
-    }
-    notifyListeners();
-  }
-}
-```
+这些内容如需冻结，应在对应实现文档中单独定义。
 
 ---
 
-### 3.2 前端模块 (ui_widget.dart) - 组员 D
+## 3. 当前状态（现有系统长什么样）
 
-**职责**: UI 展示、用户交互捕获
+### 3.1 当前默认入口
 
-#### 3.2.1 依赖注入接口
-```dart
-class DialogueUI extends StatelessWidget {
-  final AppController controller;  // 必须通过构造函数注入
-  
-  const DialogueUI({required this.controller});
-}
-```
+当前应用默认入口如下：
 
-#### 3.2.2 状态监听接口 (混合方案)
-```dart
-// 方式 1: 监听 ChangeNotifier (对话状态)
-ListenableBuilder(
-  listenable: controller,
-  builder: (context, child) {
-    if (controller.isTalking) {
-      return buildDialogueOverlay();
-    } else {
-      return SizedBox.shrink();
-    }
-  },
-)
+- `lib/main.dart` 创建 `MyApp`
+- `MyApp` 进入 `MainStage`
+- `MainStage` 创建 `AppController`
+- `MainStage` 将 `AppController` 注入 `UIWidgets`
 
-// 方式 2: 监听 ValueNotifier (倒计时等)
-ValueListenableBuilder<int>(
-  valueListenable: controller.remainingSeconds,
-  builder: (context, value, child) {
-    return Text(_formatTime(value));
-  },
-)
-```
+当前默认主界面**只有** `UIWidgets`，没有独立接入的 `DialogueUI` 层。
 
-#### 3.2.3 用户交互接口
-| 交互事件         | 调用方法                    | 说明           |
-| :--------------- | :-------------------------- | :------------- |
-| 点击 Skip 按钮   | `controller.skipDialogue()` | 退出对话       |
-| 点击气泡外区域   | `controller.nextDialogue()` | 下一条对话     |
-| 点击开始专注按钮 | `controller.startFocus()`   | 进入专注状态   |
-| 点击 UI 功能按钮 | 直接执行按钮逻辑            | 对话中允许操作 |
+### 3.2 当前控制器状态
 
-#### 3.2.4 遮罩层行为规范
-```dart
-// 透明遮罩层必须设置 HitTestBehavior.translucent
-GestureDetector(
-  behavior: HitTestBehavior.translucent,  // 允许事件穿透到下层 UI
-  onTap: () => controller.nextDialogue(),
-  child: Container(color: Colors.transparent),
-)
-```
+当前 `lib/app_controller.dart` 的真实公开状态与方法为：
 
----
+#### 状态
+- `remainingSeconds: ValueNotifier<int>`
+- `isActive: ValueNotifier<bool>`
+- `isDrawerOpen: ValueNotifier<bool>`
+- `currentDate: ValueNotifier<String>`
 
-### 3.3 动画模块 (character_view.dart) - 组员 B
+#### 方法
+- `toggleTimer()`
+- `resetTimer()`
+- `fetchHistoryData()`
+- `dispose()`
 
-**职责**: 根据业务状态播放对应动画
+当前控制器**还没有**以下能力：
 
-#### 3.3.1 依赖注入接口
-```dart
-class CharacterView extends StatefulWidget {
-  final AppController controller;  // 必须通过构造函数注入
-  
-  const CharacterView({required this.controller});
-}
-```
+- 对话状态
+- 对话队列
+- 对话触发接口
+- 生命周期恢复接口
+- 对话文案加载接口
 
-#### 3.3.2 状态监听接口 (混合方案)
-```dart
-// 监听 ChangeNotifier (业务状态、对话状态)
-controller.addListener(() {
-  _updateMotion();
-});
-```
+### 3.3 当前 UI 状态
 
-#### 3.3.3 动画状态映射
-| 业务状态               | Live2D 动作    | 调用方法              |
-| :--------------------- | :------------- | :-------------------- |
-| `TomatoState.studying` | `study` (学习) | `playMotion("study")` |
-| `TomatoState.resting`  | `idle` (待机)  | `playMotion("idle")`  |
-| `isTalking = true`     | `talk` (说话)  | `playMotion("talk")`  |
+当前 `lib/ui_widgets.dart` 承载主界面和大部分交互逻辑，包括：
 
-#### 3.3.4 角色点击接口
-```dart
-// 点击角色时触发对话
-GestureDetector(
-  onTap: () {
-    if (!controller.isTalking && controller.tomatoState == TomatoState.resting) {
-      controller.triggerDialogue("clicked");
-    }
-  },
-  child: Live2DWidget(),
-)
-```
+- 顶部信息区
+- 角色展示占位区
+- Dock/按钮区
+- 历史统计面板
+
+当前 UI 中**还没有**：
+
+- 对话气泡层
+- Skip / Next 对话交互
+- 专门的 Tips 展示区
+
+### 3.4 当前角色模块状态
+
+`lib/character_view.dart` 当前仍是 stub，尚未成为默认入口中的正式角色模块。
+
+因此，现阶段关于“角色点击触发对话”“角色动画切换”“对话时角色说话动作”等内容，都属于**目标能力**，不是当前事实。
+
+### 3.5 当前资源状态
+
+当前 `pubspec.yaml` 仅明确注册了：
+
+- `assets/background.webp`
+
+当前仓库**没有形成稳定的对话资源契约**，因此：
+
+- `assets/dialogues.json` 或 `assets/dialogue.json` 目前都不应被视为既有事实
+- 对话文案资源路径需要在实现阶段统一命名并注册到 `pubspec.yaml`
+
+### 3.6 与旧文档的关系
+
+`docs/interface_spec.md` 中包含更大范围的未来设计与旧命名，不能直接视为当前事实。
+番茄钟现状与当前主界面结构，应优先参考：
+
+- `docs/pomodoro_interface_spec.md`
+- `lib/main.dart`
+- `lib/app_controller.dart`
+- `lib/ui_widgets.dart`
 
 ---
 
-### 3.4 架构模块 (main.dart) - 组长
+## 4. 需求边界
 
-**职责**: 初始化、依赖注入、生命周期监听
+### 4.1 系统职责
 
-#### 3.4.1 初始化接口
-```dart
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  final appController = AppController();
-  await appController.loadData();  // 加载持久化数据
-  
-  runApp(
-    MaterialApp(
-      home: Scaffold(
-        body: Stack(
-          children: [
-            CharacterView(controller: appController),
-            DialogueUI(controller: appController),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-```
+对话与 Tips 系统负责：
 
-#### 3.4.2 生命周期监听接口
-```dart
-class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-  
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      appController.handleAppResume();
-    }
-  }
-  
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-}
-```
+- 接收外部触发
+- 选择要展示的文案
+- 管理当前展示状态
+- 提供用户关闭 / 跳过 / 下一条的交互能力
+- 向 UI 提供当前可渲染的数据
+
+### 4.2 非职责
+
+对话与 Tips 系统不负责：
+
+- 启动或结束番茄钟
+- 替代 `toggleTimer()` / `resetTimer()` 等现有控制逻辑
+- 重新定义当前倒计时、抽屉、日期等现有状态
+- 接管整个页面结构
+
+### 4.3 与番茄钟的关系
+
+对话系统是**依赖番茄钟事件的展示系统**，不是番茄钟主状态机。
+
+因此后续实现时应遵守：
+
+- 番茄钟状态变化仍由现有主流程驱动
+- 对话系统只订阅或响应这些状态变化
+- 不在 talking spec 中重复定义一套新的番茄钟核心流程
 
 ---
 
-## 4. 接口调用时序 (Sequence Diagram)
+## 5. 兼容性要求（哪些接口需要兼容）
 
-```mermaid
-sequenceDiagram
-    participant User as 用户
-    participant Main as main.dart
-    participant B as character_view.dart
-    participant C as app_controller.dart
-    participant D as ui_widget.dart
+### 5.1 必须兼容当前入口结构
 
-    Note over C, D: 初始化
-    Main->>C: loadData()
-    D->>C: addListener()
-    B->>C: addListener()
+后续接入对话系统时，必须兼容当前入口结构：
 
-    Note over User, D: 开始专注
-    User->>D: 点击开始按钮
-    D->>C: startFocus()
-    C->>C: 设置 focusStartTime
-    C->>C: tomatoState = studying
-    C->>C: notifyListeners()
-    C-->>D: 状态更新
-    C-->>B: 状态更新
-    D->>D: 切换到专注界面
-    B->>B: playMotion("study")
+- `lib/main.dart` 仍是默认入口
+- `MainStage` 仍负责创建 `AppController`
+- `UIWidgets` 仍是当前默认主界面承载层
 
-    Note over User, B: 角色被点击
-    User->>B: 点击角色
-    B->>C: triggerDialogue("clicked")
-    C->>C: notifyListeners()
-    C-->>D: 状态更新
-    D->>D: 显示气泡
+如果未来新增 `DialogueUI`、`CharacterView` 等模块，也应作为**增量接入**，不能假设当前结构已完成拆分。
 
-    Note over User, D: 用户操作
-    User->>D: 点击 Skip
-    D->>C: skipDialogue()
-    C->>C: notifyListeners()
-    C-->>D: 状态更新
-    D->>D: 隐藏气泡
+### 5.2 必须兼容当前控制器接口
 
-    Note over Main, C: App 生命周期
-    User->>Main: 返回 App
-    Main->>C: handleAppResume()
-    C->>C: 时间同步
-    alt 仍在专注时间内
-        C->>C: triggerDialogue("resume")
-    else 已进入休息/超时
-        C->>C: finishFocus()
-    end
-    C->>C: notifyListeners()
-    C-->>D: 状态更新
-    C-->>B: 状态更新
-```
+后续新增对话能力时，不能破坏以下现有接口：
+
+- `remainingSeconds`
+- `isActive`
+- `isDrawerOpen`
+- `currentDate`
+- `toggleTimer()`
+- `resetTimer()`
+- `fetchHistoryData()`
+- `dispose()`
+
+即：
+
+- 现有 UI 读取 `ValueNotifier` 的方式必须仍然可用
+- 当前主界面功能不能因为接入对话系统而失效
+- 对话系统应作为新增能力，而不是替换现有 controller 契约
+
+### 5.3 必须兼容当前资源现状
+
+在对话资源正式注册前，不应把任何对话 JSON 路径写成“当前已接入”。
+
+实现阶段需要补齐：
+
+1. 统一文案资源文件名
+2. 在 `pubspec.yaml` 注册资源
+3. 约定默认兜底文案
+
+### 5.4 必须兼容当前角色模块现状
+
+由于 `lib/character_view.dart` 当前尚未落地，对话系统第一阶段不应依赖它作为唯一入口。
+
+可接受的接入方式是：
+
+- 先在 `UIWidgets` 内渲染对话层
+- 后续角色模块成熟后，再把角色点击和动画联动迁移出去
 
 ---
 
-## 5. 状态优先级规则 (State Priority Rules)
+## 6. 接口定义
 
-### 5.1 业务状态与交互状态关系
-| 业务状态变更         | 交互状态影响            | 说明                   |
-| :------------------- | :---------------------- | :--------------------- |
-| `resting → studying` | 触发 `start_focus` 对话 | 开始专注               |
-| `studying → resting` | 触发 `completed` 对话   | 专注完成               |
-| `studying` 状态中    | 禁止新对话触发          | 专注优先 (resume 除外) |
+### 6.1 接口定义归属
 
-### 5.2 App 返回时的状态同步
-| 返回时状态 | 时间判断     | 预期行为           | 对话触发    |
-| :--------- | :----------- | :----------------- | :---------- |
-| `studying` | 剩余时间 > 0 | 同步剩余时间       | `resume`    |
-| `studying` | 剩余时间 ≤ 0 | 状态同步为 resting | `completed` |
-| `resting`  | -            | 保持 resting       | 无          |
+本功能的接口定义分为两层：
 
-### 5.3 用户交互优先级
-| 优先级    | 点击区域    | 预期行为                                       |
-| :-------- | :---------- | :--------------------------------------------- |
-| P1 (最高) | Skip 按钮   | `skipDialogue()`                               |
-| P2        | UI 功能按钮 | 执行按钮逻辑 (对话保持)                        |
-| P3        | 角色点击    | `triggerDialogue("clicked")` (仅 resting 状态) |
-| P4 (最低) | 空白区域    | `nextDialogue()`                               |
+1. **文档层接口契约**
+   - 定义在 `docs/talking_interface_spec.md`
+   - 用于说明对话系统需要提供哪些状态、方法、触发类型和兼容约束
 
----
+2. **代码层公开接口**
+   - 定义在 `lib/app_controller.dart`
+   - 用于承载运行时真正被 UI 调用的公开状态和方法
 
-## 6. 边界情况处理 (Edge Cases)
+这两层的关系是：
 
-| 场景               | 预期行为                   | 负责模块              |
-| :----------------- | :------------------------- | :-------------------- |
-| 队列索引超出范围   | 自动调用 `skipDialogue()`  | `app_controller.dart` |
-| 对话中触发新对话   | 打断当前对话，加载新队列   | `app_controller.dart` |
-| JSON 文件加载失败  | 使用默认备用文本           | `app_controller.dart` |
-| 对话中 UI 按钮点击 | 按钮逻辑执行 + 对话保持    | `ui_widget.dart`      |
-| 对话中角色点击     | 无响应 (对话中禁用)        | `character_view.dart` |
-| App 后台切换       | 保持对话状态不变           | `app_controller.dart` |
-| 专注中触发对话     | 忽略，不触发 (resume 除外) | `app_controller.dart` |
-| 专注中角色点击     | 无响应 (专注中禁用)        | `character_view.dart` |
+- spec 负责定义“**应该提供什么接口**”
+- `AppController` 负责定义“**代码实际暴露什么接口**”
 
----
+### 6.2 文档层接口契约
 
-## 7. 开发检查清单 (Development Checklist)
+从 spec 角度，对话与 Tips 系统至少需要定义以下接口类型：
 
-### 7.1 组员 C (后端)
-- [ ] 保留现有 `ValueNotifier` 状态变量
-- [ ] 新增 `ChangeNotifier` 继承 (对话系统)
-- [ ] 实现所有公共方法接口
-- [ ] 确保 ChangeNotifier 状态变化调用 `notifyListeners()`
-- [ ] 确保 ValueNotifier 状态变化使用 `.value = newValue`
-- [ ] 实现 JSON 加载逻辑
-- [ ] 实现数据持久化 (`loadData`/`saveData`)
-- [ ] 实现对话优先级规则检查
-- [ ] 实现 `dispose()` 方法释放所有资源
-- [ ] **删除 `_currentCycle` 相关逻辑**
+#### 状态接口
 
-### 7.2 组员 D (前端)
-- [ ] 实现依赖注入 (构造函数接收 controller)
-- [ ] 实现 `ListenableBuilder` 状态监听 (ChangeNotifier)
-- [ ] 实现 `ValueListenableBuilder` 状态监听 (ValueNotifier)
-- [ ] 实现 Skip 按钮点击处理
-- [ ] 实现气泡外点击处理
-- [ ] 实现遮罩层 `HitTestBehavior.translucent`
-- [ ] 实现开始专注按钮 (`startFocus()`)
-- [ ] 测试对话中 UI 按钮可点击
+| 状态 | 说明 |
+| :-- | :-- |
+| `isTalking` | 当前是否正在显示对话 |
+| `currentDialogue` | 当前展示的文本 |
+| `currentTrigger` | 当前对话来自哪类触发 |
+| `dialogueQueue` | 当前待展示文案序列 |
+| `currentIndex` | 当前队列位置 |
 
-### 7.3 组员 B (动画)
-- [ ] 实现依赖注入 (构造函数接收 controller)
-- [ ] 实现 `addListener` 状态监听
-- [ ] 实现业务状态到动画动作的映射
-- [ ] 实现角色点击检测
-- [ ] 实现对话中/专注中禁用新对话触发
+#### 方法接口
 
-### 7.4 组长 (架构)
-- [ ] 创建 `dialogues.json` 文件
-- [ ] 配置 `assets` 路径
-- [ ] 实现 `WidgetsBindingObserver` 生命周期监听
-- [ ] 实现依赖注入
-- [ ] 组织接口联调测试
-- [ ] 确保 `dispose()` 正确调用
+| 方法 | 说明 |
+| :-- | :-- |
+| `triggerDialogue(...)` | 触发一轮对话 |
+| `nextDialogue()` | 切换到下一条 |
+| `skipDialogue()` | 结束当前对话 |
+| `handleAppResume()` | App 恢复时判断是否触发提示 |
 
----
+#### 触发类型接口
 
-## 8. 版本历史 (Version History)
+| 触发类型 | 说明 |
+| :-- | :-- |
+| `clicked` | 用户主动点击角色或角色区域 |
+| `start_focus` | 用户开始专注时触发 |
+| `completed` | 一轮专注完成时触发 |
+| `resume` | App 恢复且仍处于专注流程中时触发 |
+| `idle` | 用户空闲超时时触发 |
 
-| 版本 | 变更说明                                                     |
-| :--- | :----------------------------------------------------------- |
-| v1.0 | 初始版本，定义对话系统核心接口                               |
-| v2.0 | 分离业务状态与交互状态，明确对话框由前端独立实现             |
-| v3.0 | 移除 idle 状态，采用 ValueNotifier+ChangeNotifier 混合方案   |
-| v4.0 | 删除 `continue_focus` 类型，用 `resume` 代替 App 返回场景，删除 `_currentCycle` |
+说明：
+
+- 文档层应统一术语，不应同时混用两套命名或两套参数表示。
+- 如果后续决定使用 `enum`，则整份文档都应按 `enum` 口径描述；如果使用字符串，同样应统一。
+
+### 6.3 代码层公开接口落点
+
+在当前仓库结构下，上述公开接口的代码落点应统一放在 `lib/app_controller.dart`。
+
+原因：
+
+- `lib/main.dart` 当前通过 `MainStage` 创建并注入 `AppController`
+- `lib/ui_widgets.dart` 当前通过读取 controller 状态和调用 controller 方法完成交互
+- 这意味着 `AppController` 已经是当前默认架构下的状态与行为入口
+
+因此后续新增对话能力时，应以“扩展 `AppController` 的公开状态 / 方法”为主，而不是在 UI 文件中重新定义一套业务接口。
+
+### 6.4 不负责定义业务接口的文件
+
+以下文件可以引用接口、消费接口、适配接口，但不应重复定义对话系统核心业务接口：
+
+| 文件 | 角色 | 不应承担的职责 |
+| :-- | :-- | :-- |
+| `lib/main.dart` | 入口与依赖注入 | 不重复定义业务状态和业务方法 |
+| `lib/ui_widgets.dart` | 读取状态、渲染 UI、触发调用 | 不成为接口真相源 |
+| `lib/character_view.dart` | 角色展示与交互适配 | 不单独定义对话系统核心契约 |
+
+### 6.5 接口变更原则
+
+后续如果调整对话系统接口，应同时满足：
+
+- spec 中的接口定义同步更新
+- `AppController` 中的公开接口同步更新
+- 不破坏当前番茄钟已有公开接口
+- 不让多个文件同时维护同一份业务接口真相
 
 ---
 
-## 9. 附录：快速参考 (Quick Reference)
+## 7. 目标能力（后续实现应提供什么）
 
-### 9.1 对话类型枚举
-```dart
-enum DialogueType {
-  clicked,        // 角色被点击
-  completed,      // 任务完成
-  idle,           // 空闲超时
-  resume,         // App 返回 (仍在专注)
-  start_focus,    // 开始专注
-}
-```
+### 7.1 最小能力集合
 
-### 9.2 业务状态枚举
-```dart
-enum TomatoState {
-  resting,    // 休息中 (冷启动默认)
-  studying,   // 专注中
-}
-```
+后续实现至少应提供以下能力：
 
-### 9.3 状态读取速查
-```dart
-// ChangeNotifier 状态
-controller.isTalking;           // 是否正在对话
-controller.currentDialogue;     // 当前对话文本
-controller.tomatoState;         // 业务状态
-controller.focusStartTime;      // 专注开始时间
+1. 接收触发事件
+2. 显示当前对话文案
+3. 支持关闭或跳过当前对话
+4. 支持多条文案顺序展示
+5. 支持基础优先级仲裁
+6. 支持没有资源文件时的兜底文案
 
-// ValueNotifier 状态
-controller.remainingSeconds.value;  // 倒计时秒数
-controller.isActive.value;          // 计时器运行状态
-controller.isDrawerOpen.value;      // 菜单状态
-```
+### 7.2 最小状态模型
 
-### 9.4 接口调用速查
-```dart
-controller.triggerDialogue("clicked");    // 触发对话
-controller.nextDialogue();                // 下一条
-controller.skipDialogue();                // 跳过
-controller.startFocus();                  // 开始专注
-controller.finishFocus();                 // 完成专注
-controller.handleAppResume();             // App 返回处理
-```
+为了支持上述能力，系统至少需要表达以下状态：
 
-### 9.5 混合方案速查
-```dart
-// ValueNotifier 变更
-controller.remainingSeconds.value = 1500;
+| 状态 | 说明 |
+| :-- | :-- |
+| `isTalking` | 当前是否正在显示对话 |
+| `currentDialogue` | 当前展示的文本 |
+| `currentTrigger` | 当前对话来自哪类触发 |
+| `dialogueQueue` | 当前待展示文案序列 |
+| `currentIndex` | 当前队列位置 |
 
-// ChangeNotifier 变更
-controller.startFocus();
-// 内部会调用 notifyListeners()
-```
+说明：这些是**目标状态模型**，不是当前 `AppController` 已具备的事实。
+
+### 7.3 最小公开接口
+
+后续实现建议至少提供以下公开能力：
+
+| 接口 | 作用 |
+| :-- | :-- |
+| `triggerDialogue(...)` | 触发一轮对话 |
+| `nextDialogue()` | 进入下一条 |
+| `skipDialogue()` | 结束当前对话 |
+| `handleAppResume()` | 处理 App 恢复时的对话判断 |
+
+说明：
+- 具体参数类型可以在实现阶段冻结，但文档中应保持统一，不要同时混用 `String` 和 `enum` 两套表示。
+- 若存在私有实现入口，应与公开接口严格区分，不在 spec 中混写。
 
 ---
 
-> **文档结束**  
-> 如有接口变更，请更新此文档并通知所有组员  
-> **协作原则**: 接口契约优先，模块内部实现自治
+## 8. 触发规则
+
+### 8.1 基本触发规则
+
+| 触发类型 | 来源 | 是否属于第一阶段必须支持 |
+| :-- | :-- | :-- |
+| `clicked` | 用户点击角色或角色区域 | 是 |
+| `start_focus` | 开始专注 | 是 |
+| `completed` | 专注结束 | 是 |
+| `resume` | App 恢复 | 是 |
+| `idle` | 用户空闲超时 | 否，可后补 |
+
+说明：`idle` 依赖空闲检测策略，当前仓库还没有统一定义，允许作为第二阶段能力接入。
+
+### 8.2 优先级原则
+
+建议按以下优先级处理：
+
+| 优先级 | 触发类型 | 原则 |
+| :-- | :-- | :-- |
+| P1 | `completed` | 优先覆盖低优先级提示 |
+| P2 | `resume` | 高于被动提示 |
+| P3 | `start_focus` | 作为状态切换提示 |
+| P4 | `clicked` | 用户主动触发 |
+| P5 | `idle` | 最低优先级 |
+
+### 8.3 仲裁要求
+
+后续实现时必须明确并保持一致：
+
+- 对话展示中收到更高优先级触发时，是否覆盖当前对话：仅P1,P2,P3可覆盖更低优先级对话
+- 对话展示中收到同级或更低优先级触发时，是否忽略或排队：同级忽略，更低级排队
+- 用户主动 `skip` 后，是否允许同类提示立即再次弹出：不允许
+
+本文档当前只冻结原则，不冻结具体实现策略；实现时需要在代码与文档中保持一致。
+
+### 8.4 关于 `start_focus` 的特殊说明
+
+`start_focus` 属于“开始专注时的状态切换提示”，不能简单套用“专注中禁止普通新对话”的规则。
+因此后续实现时应将它视为**状态切换事件附带提示**，而不是普通的 resting / studying 内部随机对话。
+
+这条规则用于避免以下歧义：
+
+- 一边说“进入 studying 后禁止新对话”
+- 一边又要求“开始专注时弹出提示”
+
+---
+
+## 9. UI 需求
+
+### 9.1 基本展示需求
+
+对话 UI 至少需要支持：
+
+- 显示当前文本
+- 显示 / 隐藏状态切换
+- 用户手动关闭
+- 用户切到下一条
+
+### 9.2 与现有 UI 的兼容要求
+
+接入方式应满足：
+
+- 不阻断当前主界面基础交互
+- 不破坏现有 Dock / Drawer / 统计区布局
+- 即使角色模块未正式落地，也能在当前界面中展示对话内容
+
+### 9.3 点击行为要求
+
+至少需要区分以下几类区域：
+
+- Skip / Close 按钮
+- 当前对话气泡区域
+- 气泡外空白区域
+- 现有业务按钮区域
+
+具体点击命中顺序可以在实现阶段细化，但必须避免文档与实现出现冲突。
+
+---
+
+## 10. 资源需求
+
+### 10.1 文案来源
+
+对话与 Tips 文案应支持外部资源配置，以便后续替换和扩充。
+
+推荐做法：
+
+- 将文案存储在 `assets/dialogue.json`中
+- 文件名在实现阶段统一冻结
+- 注册到 `pubspec.yaml`
+- 提供加载失败时的默认兜底文案
+
+### 10.2 当前状态说明
+
+截至本文档版本：
+
+- 文案资源路径尚未冻结
+-  `assets/dialogue.json`尚未创建，也尚未在`pubspec.yaml` 注册
+
+---
+
+## 11. 实现验收标准
+
+当该功能进入实现阶段后，至少应满足以下验收条件：
+
+1. 当前默认入口仍可运行
+2. 现有 `UIWidgets` 主流程不被破坏
+3. 至少支持 `clicked / start_focus / completed / resume` 四类触发
+4. 对话文案可显示、可关闭、可切下一条
+5. 无资源文件时仍有兜底文案
+6. 文档中的接口命名、触发规则、优先级原则与实现保持一致
+
+---
+
+## 12. 参考基线
+
+当前与本 spec 直接相关的基线文件：
+
+- `lib/main.dart`
+- `lib/app_controller.dart`
+- `lib/ui_widgets.dart`
+- `lib/character_view.dart`
+- `pubspec.yaml`
+- `docs/pomodoro_interface_spec.md`
+
+---
+
+> **文档结束**
+> 本文档用于定义对话与 Tips 系统的目标、现状与兼容要求；如需补充实现细节，应在不违背本文约束的前提下另行细化。

@@ -419,7 +419,15 @@ void updateCycleCount(int? count)
 - 冻结的配置更新方法尚未实现
 - UI 仍保留本地进度状态与本地 reset 补丁逻辑
 
-### 5.3 迁移要求
+### 5.3 当前推荐实现路径
+
+基于当前仓库与本轮任务边界，推荐按以下顺序推进：
+1. 先在 `AppController` 中补齐真实计时、状态机、持久化恢复
+2. 再让 `main.dart` 负责最小生命周期恢复接线
+3. 最后替换 `UIWidgets` 中的 `_fakeTimer` / `_fakeProgress` 路径
+4. `fetchHistoryData()` 先提供最小历史摘要，满足统计面板和分享卡片即可
+
+### 5.4 迁移要求
 
 后续实现真实番茄钟逻辑时，应遵循以下迁移方向：
 1. 让 controller 成为倒计时和进度的唯一状态来源

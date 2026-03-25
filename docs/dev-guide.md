@@ -175,6 +175,12 @@ lib/
 - `resetTimer()`
 - `fetchHistoryData()`
 
+如果你当前在补番茄钟后端，先看这几份文档再动手：
+- `docs/番茄钟功能简要.md`
+- `docs/pomodoro_interface_spec.md`
+- `docs/pomodoro_state_flow.md`
+- `docs/pomodoro_integration_rules.md`
+
 ### `lib/ui_widgets.dart`
 
 如果你负责界面层，优先在这里处理：

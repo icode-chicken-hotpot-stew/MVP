@@ -352,6 +352,8 @@ stateDiagram-v2
 5. `cycleCount = N` 时，总专注完成轮次不得超过 `N`
 6. `resetTimer()` 在任何阶段都必须回到 `Ready`
 7. 恢复到过期快照时，不得停留在已过期状态
+8. `fetchHistoryData()` 不得改变 `pomodoroState`、`isActive`、`remainingSeconds`
+9. UI 进度条与时间文本的值必须可由同一阶段总时长 + `remainingSeconds` 推导
 
 ---
 
@@ -359,6 +361,7 @@ stateDiagram-v2
 
 - `docs/pomodoro_interface_spec.md`
 - `docs/番茄钟功能简要.md`
+- `docs/pomodoro_integration_rules.md`
 - `lib/app_controller.dart`
 - `lib/ui_widgets.dart`
 - `lib/main.dart`

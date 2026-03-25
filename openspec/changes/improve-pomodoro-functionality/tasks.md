@@ -3,6 +3,7 @@
 - [ ] 1.1 Add pomodoro business state, duration configuration, cycle configuration, and completed-cycle state to `lib/app_controller.dart`
 - [ ] 1.2 Add an internal pomodoro snapshot model and local persistence read/write helpers for phase type, start time, phase duration, active state, paused remaining time, durations, cycle count, and completed cycles
 - [ ] 1.3 Add a controller initialization entrypoint that restores saved configuration and pomodoro snapshot during app startup
+- [ ] 1.4 Add `shared_preferences` dependency and wire pomodoro persistence through a lightweight local key-value storage path
 
 ## 2. Timer runtime and state transitions
 
@@ -25,9 +26,14 @@
 - [ ] 4.3 Keep countdown text, play/pause button state, and reset behavior fully driven by controller state and methods
 - [ ] 4.4 Ensure `lib/main.dart` triggers controller initialization early enough that restored state is available before normal UI interaction
 
-## 5. Verification
+## 5. Deferred non-goals for this change
 
-- [ ] 5.1 Add targeted tests for controller start, pause, resume, reset, focus completion, rest completion, and cycle-limit behavior
-- [ ] 5.2 Add targeted tests for snapshot persistence, paused recovery, active recovery, and expired-phase advancement
-- [ ] 5.3 Run `flutter analyze` and `flutter test`
-- [ ] 5.4 Manually verify the main pomodoro flow, including app background/resume and restart recovery behavior
+- [ ] 5.1 Leave `fetchHistoryData()` as placeholder/non-blocking interface for this batch and avoid expanding this change into full history-statistics contract work
+- [ ] 5.2 Leave settings-entry UI placement and interaction design out of this batch while keeping future settings consumption compatible with controller configuration methods
+
+## 6. Verification
+
+- [ ] 6.1 Add targeted tests for controller start, pause, resume, reset, focus completion, rest completion, and cycle-limit behavior
+- [ ] 6.2 Add targeted tests for snapshot persistence, paused recovery, active recovery, and expired-phase advancement
+- [ ] 6.3 Run `flutter analyze` and `flutter test`
+- [ ] 6.4 Manually verify the main pomodoro flow, including app background/resume and restart recovery behavior

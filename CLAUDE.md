@@ -19,7 +19,7 @@
 - `lib/character_view.dart`：角色动画层占位，当前基本未实现
 - `lib/live2d.dart`：独立 Live2D/WebView 原型，不是默认入口
 - `docs/dev-guide.md`：面向新成员的开发说明
-- `docs/pomodoro_interface_spec.md`：番茄钟 UI 现状与假进度说明
+- `openspec/changes/improve-pomodoro-functionality/`：番茄钟权威变更契约（proposal/design/specs/tasks）
 - `docs/talking_interface_spec.md`：对话接口设想
 
 ## 开发命令
@@ -92,4 +92,4 @@ git push origin feat/your-change
 - 优先相信当前代码实现。
 - 需要整体背景时先看 `CLAUDE.md`。
 - 需要上手说明时看 `docs/dev-guide.md`。
-- 需要功能现状时看 `docs/pomodoro_interface_spec.md` 和 `docs/talking_interface_spec.md`。
+- 需要功能现状时看当前代码实现、`openspec/changes/improve-pomodoro-functionality/` 和 `docs/talking_interface_spec.md`。

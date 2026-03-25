@@ -130,7 +130,7 @@
 `docs/interface_spec.md` 中包含更大范围的未来设计与旧命名，不能直接视为当前事实。
 番茄钟现状与当前主界面结构，应优先参考：
 
-- `docs/pomodoro_interface_spec.md`
+- `openspec/changes/improve-pomodoro-functionality/design.md`
 - `lib/main.dart`
 - `lib/app_controller.dart`
 - `lib/ui_widgets.dart`
@@ -480,7 +480,7 @@
 - `lib/ui_widgets.dart`
 - `lib/character_view.dart`
 - `pubspec.yaml`
-- `docs/pomodoro_interface_spec.md`
+- `openspec/changes/improve-pomodoro-functionality/design.md`
 
 ---
 

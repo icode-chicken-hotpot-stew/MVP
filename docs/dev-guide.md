@@ -175,11 +175,15 @@ lib/
 - `resetTimer()`
 - `fetchHistoryData()`
 
-如果你当前在补番茄钟后端，先看这几份文档再动手：
-- `docs/番茄钟功能简要.md`
-- `docs/pomodoro_interface_spec.md`
-- `docs/pomodoro_state_flow.md`
-- `docs/pomodoro_integration_rules.md`
+如果你当前在补番茄钟后端，先看这几份权威材料再动手：
+- `openspec/changes/improve-pomodoro-functionality/proposal.md`
+- `openspec/changes/improve-pomodoro-functionality/design.md`
+- `openspec/changes/improve-pomodoro-functionality/specs/pomodoro-persistence-and-remaining-time/spec.md`
+- `openspec/changes/improve-pomodoro-functionality/specs/pomodoro-state-transitions/spec.md`
+- `openspec/changes/improve-pomodoro-functionality/specs/pomodoro-duration-and-cycle-settings/spec.md`
+- `openspec/changes/improve-pomodoro-functionality/tasks.md`
+
+如需确认当前已合入实现，再结合 `lib/main.dart`、`lib/app_controller.dart`、`lib/ui_widgets.dart` 一起看。
 
 ### `lib/ui_widgets.dart`
 
@@ -330,7 +334,8 @@ git push origin feat/your-change
 开始开发前，建议优先阅读：
 
 - `CLAUDE.md`：仓库级开发说明，和当前代码状态最一致
-- `docs/pomodoro_interface_spec.md`：番茄钟界面与假进度实现的现状说明
+- `openspec/changes/improve-pomodoro-functionality/design.md`：番茄钟权威设计边界
+- `openspec/changes/improve-pomodoro-functionality/specs/`：番茄钟冻结行为契约
 - `docs/talking_interface_spec.md`：对话相关接口设想
 
 如果某份旧文档和代码冲突，请以当前代码实现为准。

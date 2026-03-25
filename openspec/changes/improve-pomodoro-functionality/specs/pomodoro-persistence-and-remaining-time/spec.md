@@ -11,6 +11,13 @@ The system MUST persist a pomodoro runtime snapshot in local storage when a pomo
 - **WHEN** the user pauses a running pomodoro phase
 - **THEN** the system saves a snapshot containing the current phase type, inactive running state, and the remaining seconds at the moment of pause
 
+### Requirement: Use lightweight key-value local storage for pomodoro persistence
+The system MUST implement pomodoro snapshot and configuration persistence using `shared_preferences`-style local key-value storage for this change. The system MUST NOT require a relational schema, multi-table storage model, or heavier database layer to satisfy the MVP persistence contract.
+
+#### Scenario: Persist pomodoro snapshot with lightweight local storage
+- **WHEN** the controller saves the latest pomodoro runtime snapshot
+- **THEN** it writes the snapshot through a `shared_preferences`-style local key-value persistence path suitable for a single-device MVP app
+
 ### Requirement: Recover remaining time from persisted snapshot
 The system MUST restore pomodoro state from the latest persisted snapshot during controller initialization. If the snapshot indicates an active phase, the system MUST recompute remaining time from the persisted phase start time and phase duration instead of trusting a stale in-memory countdown value.
 

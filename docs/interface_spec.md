@@ -5,7 +5,7 @@
 > **适用对象**: 开发团队成员、AI 助手 (Claude)
 > **协作原则**: 接口契约优先，模块内部实现自治
 >
-> **状态说明**: 本文档保留为跨模块历史蓝图/协作草案。当前番茄钟后端实现、状态机和联调边界，请优先参考 `docs/pomodoro_interface_spec.md`、`docs/pomodoro_state_flow.md`、`docs/pomodoro_integration_rules.md`、`docs/番茄钟功能简要.md` 与当前代码实现。
+> **状态说明**: 本文档保留为跨模块历史蓝图/协作草案。当前番茄钟后端实现、状态机和联调边界，请优先参考 `openspec/changes/improve-pomodoro-functionality/` 下的 proposal / design / specs / tasks 与当前代码实现。
 
 ---
 

@@ -195,7 +195,7 @@ void handleAppResume() {
 
 ---
 
-### 3.2 前端模块 (ui_widget.dart) - 组员 D
+### 3.2 前端模块 (ui_widgets.dart) - 组员 D
 
 **职责**: UI 展示、用户交互捕获
 
@@ -355,7 +355,7 @@ sequenceDiagram
     participant Main as main.dart
     participant B as character_view.dart
     participant C as app_controller.dart
-    participant D as ui_widget.dart
+    participant D as ui_widgets.dart
 
     Note over C, D: 初始化
     Main->>C: loadData()
@@ -436,7 +436,7 @@ sequenceDiagram
 | 队列索引超出范围   | 自动调用 `skipDialogue()`  | `app_controller.dart` |
 | 对话中触发新对话   | 打断当前对话，加载新队列   | `app_controller.dart` |
 | JSON 文件加载失败  | 使用默认备用文本           | `app_controller.dart` |
-| 对话中 UI 按钮点击 | 按钮逻辑执行 + 对话保持    | `ui_widget.dart`      |
+| 对话中 UI 按钮点击 | 按钮逻辑执行 + 对话保持    | `ui_widgets.dart`      |
 | 对话中角色点击     | 无响应 (对话中禁用)        | `character_view.dart` |
 | App 后台切换       | 保持对话状态不变           | `app_controller.dart` |
 | 专注中触发对话     | 忽略，不触发 (resume 除外) | `app_controller.dart` |
@@ -578,25 +578,3 @@ controller.startFocus();
 > **文档结束**  
 > 如有接口变更，请更新此文档并通知所有组员  
 > **协作原则**: 接口契约优先，模块内部实现自治oller.triggerDialogue("clicked");    // 触发对话
-controller.nextDialogue();                // 下一条
-controller.skipDialogue();                // 跳过
-controller.startFocus();                  // 开始专注
-controller.finishFocus();                 // 完成专注
-controller.handleAppResume();             // App 返回处理
-```
-
-### 9.5 混合方案速查
-```dart
-// ValueNotifier 变更
-controller.remainingSeconds.value = 1500;
-
-// ChangeNotifier 变更
-controller.startFocus();
-// 内部会调用 notifyListeners()
-```
-
----
-
-> **文档结束**  
-> 如有接口变更，请更新此文档并通知所有组员  
-> **协作原则**: 接口契约优先，模块内部实现自治

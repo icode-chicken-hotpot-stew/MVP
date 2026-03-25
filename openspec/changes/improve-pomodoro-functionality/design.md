@@ -46,7 +46,7 @@
 ### 1. 在 `AppController` 内扩展番茄钟状态，而不是把逻辑分散到 UI 或新建大规模模块
 
 采用方案：继续以 `AppController` 为唯一业务入口，在其中新增番茄钟所需 `ValueNotifier` 与私有计时/恢复逻辑。建议新增至少以下状态：
-- `pomodoroState: ValueNotifier<PomodoroState>`
+- `tomatoState: ValueNotifier<TomatoState>`
 - `focusDurationSeconds: ValueNotifier<int>`
 - `restDurationSeconds: ValueNotifier<int>`
 - `cycleCount: ValueNotifier<int?>`
@@ -67,7 +67,7 @@
 ### 2. 使用“阶段快照 + 开始时间”做持久化模型，而不是只保存剩余秒数
 
 采用方案：持久化一个轻量快照对象，至少包括：
-- 当前阶段 `pomodoroState`
+- 当前阶段 `tomatoState`
 - 当前阶段开始时间 `startedAt`
 - 当前阶段总时长 `phaseDurationSeconds`
 - 当前是否运行 `isActive`
@@ -107,8 +107,8 @@
 ### 4. 用单一状态机驱动 `resting` / `studying` 与运行态，不引入第三业务状态
 
 采用方案：遵循现有文档，业务状态保持两态：
-- `PomodoroState.resting`
-- `PomodoroState.studying`
+- `TomatoState.resting`
+- `TomatoState.studying`
 
 运行中 / 暂停 / 待开始通过 `isActive` 与 `remainingSeconds` 组合表达：
 - `resting + inactive + remainingSeconds == focusDurationSeconds` 表示 Ready
@@ -133,11 +133,11 @@
 ### 5. 前端不再维护 `_fakeTimer` / `_fakeProgress`，进度由剩余时间与当前阶段总时长推导
 
 采用方案：删除 `UIWidgets` 中的 `_fakeTimer`、`_fakeProgress`、`_activeListener` 和 `_resetFakeProgress()` 的正式职责，顶部进度条改为从 controller 状态推导：
-- 若 `pomodoroState == studying`，总时长取 `focusDurationSeconds.value`
-- 若 `pomodoroState == resting`，总时长取 `restDurationSeconds.value`
+- 若 `tomatoState == studying`，总时长取 `focusDurationSeconds.value`
+- 若 `tomatoState == resting`，总时长取 `restDurationSeconds.value`
 - 进度值 = `(total - remainingSeconds) / total`，并做 0 到 1 的边界保护
 
-倒计时文本继续消费 `remainingSeconds`。播放/暂停按钮继续消费 `isActive`。若后续需要展示文案“学习中 / 休息中”，由 `pomodoroState + isActive` 组合推导。
+倒计时文本继续消费 `remainingSeconds`。播放/暂停按钮继续消费 `isActive`。若后续需要展示文案“学习中 / 休息中”，由 `tomatoState + isActive` 组合推导。
 
 理由：当前最大不一致点就是进度条来自 `_fakeProgress`，而文本来自 `remainingSeconds`。要满足“通过接口把剩余时间给前端处理”，最佳做法是 controller 提供状态，UI 做纯推导展示，而不是再引入另一套时间源。
 

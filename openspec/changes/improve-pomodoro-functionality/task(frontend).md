@@ -49,7 +49,7 @@
 
 - `remainingSeconds`
 - `isActive`
-- `pomodoroState`
+- `tomatoState`
 - `focusDurationSeconds`
 - `restDurationSeconds`
 - `cycleCount`
@@ -109,7 +109,7 @@
 - Reset 后不再需要 `_resetFakeProgress()` 一类本地辅助方法。
 
 ### 3.4 统一阶段展示语义
-- [ ] 若 UI 需要展示“专注中 / 休息中 / 待开始”等文案，只能由 `pomodoroState + isActive` 组合推导。
+- [ ] 若 UI 需要展示“专注中 / 休息中 / 待开始”等文案，只能由 `tomatoState + isActive` 组合推导。
 - [ ] 不新增本地阶段变量，不新增 UI 私有状态机。
 
 ---

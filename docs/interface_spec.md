@@ -85,12 +85,12 @@ graph TB
 | :--- | :--- | :--- | :--- | :--- |
 | `isTalking` | `bool` | 是否处于对话状态 | ❌ | 组员 D (气泡显示) / 组员 B (动画) |
 | `currentDialogue` | `String` | 当前显示的对话文本 | ❌ | 组员 D (气泡内容) |
-| `tomatoState` | `enum` | 业务状态 (studying/resting) | ❌ | 组员 B (动画) / 组员 D (UI) |
+| `pomodoroState` | `enum` | 业务状态 (studying/resting) | ❌ | 组员 B (动画) / 组员 D (UI) |
 | `focusStartTime` | `DateTime?` | 专注开始时间戳 | ✅ | 组员 C (时间同步) |
 
 ### 3.3 业务状态枚举
 ```dart
-enum TomatoState {
+enum PomodoroState {
   resting,    // 休息中 (冷启动默认)
   studying,   // 专注中
 }
@@ -127,20 +127,20 @@ class AppController extends ChangeNotifier {
   // ============ ChangeNotifier 状态 (对话系统新增) ============
   bool _isTalking = false;
   String _currentDialogue = '';
-  TomatoState _tomatoState = TomatoState.resting;
+  PomodoroState _pomodoroState = PomodoroState.resting;
   DateTime? _focusStartTime;
   
   // ============ 状态读取接口 (Getter) ============
   bool get isTalking => _isTalking;
   String get currentDialogue => _currentDialogue;
-  TomatoState get tomatoState => _tomatoState;
+  PomodoroState get pomodoroState => _pomodoroState;
   DateTime? get focusStartTime => _focusStartTime;
   
   // ============ 状态变更接口 (Public Methods) ============
   void triggerDialogue(String type);
   void nextDialogue();
   void skipDialogue();
-  void setTomatoState(TomatoState newState);
+  void setPomodoroState(PomodoroState newState);
   void handleAppResume();
   void startFocus();
   void finishFocus();
@@ -160,7 +160,7 @@ class AppController extends ChangeNotifier {
 | `triggerDialogue` | `type: String` | `void` | 加载队列、`notifyListeners()` | B / C / main |
 | `nextDialogue` | 无 | `void` | 索引++、`notifyListeners()` | D |
 | `skipDialogue` | 无 | `void` | 重置状态、`notifyListeners()` | D |
-| `setTomatoState` | `newState: TomatoState` | `void` | 状态变更、`notifyListeners()` | D / main |
+| `setPomodoroState` | `newState: PomodoroState` | `void` | 状态变更、`notifyListeners()` | D / main |
 | `handleAppResume` | 无 | `void` | 时间同步、`notifyListeners()` | main |
 | `startFocus` | 无 | `void` | 进入 studying、`notifyListeners()` | D |
 | `finishFocus` | 无 | `void` | 进入 resting、`notifyListeners()` | C (计时器) |
@@ -183,8 +183,8 @@ notifyListeners();  // 手动通知监听者
 #### 4.1.4 对话优先级规则
 | 业务状态 | 允许触发对话 | 说明 |
 | :--- | :--- | :--- |
-| `TomatoState.resting` | ✅ | 休息状态，允许对话 |
-| `TomatoState.studying` | ❌ | 专注中，禁止新对话 (resume 除外) |
+| `PomodoroState.resting` | ✅ | 休息状态，允许对话 |
+| `PomodoroState.studying` | ❌ | 专注中，禁止新对话 (resume 除外) |
 
 ---
 
@@ -268,8 +268,8 @@ controller.addListener(() {
 #### 4.3.3 动画状态映射
 | 业务状态 | Live2D 动作 | 调用方法 |
 | :--- | :--- | :--- |
-| `TomatoState.studying` | `study` (学习) | `playMotion("study")` |
-| `TomatoState.resting` | `idle` (待机) | `playMotion("idle")` |
+| `PomodoroState.studying` | `study` (学习) | `playMotion("study")` |
+| `PomodoroState.resting` | `idle` (待机) | `playMotion("idle")` |
 | `isTalking = true` | `talk` (说话) | `playMotion("talk")` |
 
 #### 4.3.4 角色点击接口
@@ -277,7 +277,7 @@ controller.addListener(() {
 // 点击角色时触发对话
 GestureDetector(
   onTap: () {
-    if (!controller.isTalking && controller.tomatoState == TomatoState.resting) {
+    if (!controller.isTalking && controller.pomodoroState == PomodoroState.resting) {
       controller.triggerDialogue("clicked");
     }
   },
@@ -502,7 +502,7 @@ flutter:
 // ChangeNotifier 状态
 controller.isTalking;           // 是否正在对话
 controller.currentDialogue;     // 当前对话文本
-controller.tomatoState;         // 业务状态
+controller.pomodoroState;         // 业务状态
 controller.focusStartTime;      // 专注开始时间
 
 // ValueNotifier 状态

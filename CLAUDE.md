@@ -1,9 +1,11 @@
-# Icode Project MVP
+# Flutter Project
 
 ## 项目概述
-- 横屏陪伴学习类 Flutter MVP 项目。
+- 横屏陪伴学习类 Flutter 项目。
 - 默认应用入口是 `lib/main.dart`，会创建 `MainStage` 并注入 `AppController`。
-- 当前仓库属于“可运行 MVP + 部分占位实现”，不要假设所有功能已经完成。
+- 项目已进入正式快速开发阶段，当前开发窗口为 1 周。
+- 当前阶段以“前端 + 基础后端”交付为主，复杂后端能力为次优先级。
+- 当前仓库仍有部分占位实现和未完成功能，不要把现状误判为“当前还在 MVP”或“功能已齐全”。
 
 ## 技术栈
 - Flutter / Dart

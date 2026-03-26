@@ -16,15 +16,19 @@ The system MUST expose controller-level configuration for focus duration and res
 - **THEN** the controller stores the new rest duration value for future rest phases
 
 ### Requirement: Refresh ready-state display when focus duration changes
-The system MUST refresh `remainingSeconds` to the configured focus duration when the pomodoro is in the default ready state and the focus duration is updated. The system MUST NOT silently rewrite the remaining time of an already running phase.
+The system MUST refresh `remainingSeconds` to the configured focus duration when the pomodoro is in the default ready state (`pomodoroState = resting` and `phaseStatus = ready`) and the focus duration is updated. The system MUST NOT silently rewrite the remaining time of an already running or paused phase.
 
 #### Scenario: Updating focus duration from ready updates the displayed countdown
-- **WHEN** the pomodoro is inactive in the default ready state and the focus duration is changed
+- **WHEN** the pomodoro is in the default ready state and the focus duration is changed
 - **THEN** the controller updates `remainingSeconds` to match the new focus duration
 
 #### Scenario: Updating focus duration during an active phase does not rewrite current countdown
 - **WHEN** the pomodoro is already running and the focus duration is changed
 - **THEN** the controller preserves the current phase countdown and applies the new value only to later eligible phases
+
+#### Scenario: Updating focus duration during a paused phase does not rewrite current countdown
+- **WHEN** the pomodoro is paused in either focus or rest phase and the focus duration is changed
+- **THEN** the controller preserves the paused `remainingSeconds` and applies the new value only to later eligible phases
 
 ### Requirement: Support finite cycle counts only
 The system MUST support a cycle count configuration of either `null` for no looping or a positive integer for a finite number of focus cycles. The system MUST reject zero, negative values, and any representation of infinite looping.
@@ -40,6 +44,21 @@ The system MUST support a cycle count configuration of either `null` for no loop
 #### Scenario: User attempts to configure an invalid cycle count
 - **WHEN** the user provides zero, a negative number, or an infinite-loop value
 - **THEN** the controller does not accept that value as a valid cycle configuration
+
+### Requirement: Frontend exposes three configuration inputs
+The frontend MUST expose exactly three pomodoro configuration inputs in this change: focus duration, rest duration, and cycle count. These inputs MUST map directly to the controller configuration methods and MUST NOT create a second local configuration source.
+
+#### Scenario: Focus duration input maps to controller method
+- **WHEN** the user edits the focus duration input
+- **THEN** the frontend submits the value through `updateFocusDuration(int seconds)`
+
+#### Scenario: Rest duration input maps to controller method
+- **WHEN** the user edits the rest duration input
+- **THEN** the frontend submits the value through `updateRestDuration(int seconds)`
+
+#### Scenario: Cycle count input maps to controller method
+- **WHEN** the user edits the cycle count input
+- **THEN** the frontend submits the value through `updateCycleCount(int? count)`
 
 ### Requirement: Persist duration and cycle configuration
 The system MUST persist focus duration, rest duration, and cycle count configuration so that configuration survives app restart and is available during recovery.

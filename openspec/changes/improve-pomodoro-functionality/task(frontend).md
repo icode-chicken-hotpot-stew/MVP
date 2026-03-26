@@ -16,14 +16,16 @@
 
 ### 目标
 - 让番茄钟 UI 成为 `AppController` 的纯消费者。
-- 让倒计时文本、进度展示、播放/暂停按钮态全部来自同一套 controller 状态。
+- 让倒计时文本、进度展示、按钮态全部来自同一套 controller 状态。
+- 前端提供开始、暂停、重置三个按钮，不在 UI 层补业务状态。
+- 前端提供专注时长、休息时长、循环次数三个输入框，并只通过 controller 配置接口提交。
 - 去掉 `UIWidgets` 内部对正式番茄钟流程的本地假实现。
 - 在应用启动恢复场景下，避免 UI 先展示错误默认值、再跳变到恢复值。
 
 ### 非目标
 - 不在本任务中实现 `AppController` 的完整状态机。
 - 不在本任务中定义 `fetchHistoryData()` 的正式数据契约。
-- 不在本任务中完成设置面板最终交互设计。
+- 不在本任务中完成设置面板最终视觉设计。
 - 不在本任务中扩展聊天气泡、Live2D 或其他陪伴系统。
 
 ---
@@ -31,11 +33,13 @@
 ## 1. 当前前端现状确认
 
 - `lib/ui_widgets.dart` 仍维护 `_fakeTimer`、`_fakeProgress`、`_activeListener`，属于本地假计时逻辑。
-- 当前番茄钟圆形进度条消费 `_fakeProgress`，而倒计时文本消费 `controller.remainingSeconds`，存在双真相。
+- 当前番茄钟顶部进度条消费 `_fakeProgress`，而倒计时文本消费 `controller.remainingSeconds`，存在双真相。
 - Reset 按钮仍额外调用 `_resetFakeProgress()`，说明 UI 仍在补 controller 未实现的逻辑缺口。
+- 当前代码只有一个播放/暂停复用按钮，没有把“开始 / 暂停 / 重置”作为清晰的目标交互契约写死。
+- 当前代码只有设置按钮占位，尚未明确承载专注时长、休息时长、循环次数三个输入框。
 - `lib/main.dart` 当前仅创建 `AppController()` 并注入 `UIWidgets`，尚未接恢复初始化入口。
 
-前端本批次工作的核心是：**移除这些假状态职责，改为只消费 controller 的真实状态。**
+前端本批次工作的核心是：**移除这些假状态职责，改为只消费 controller 的真实状态，并把目标交互固定为 3 个控制按钮 + 3 个配置输入框。**
 
 ---
 
@@ -48,16 +52,23 @@
 前端开发与联调时，应以 `AppController` 的以下状态或等价接口为契约面：
 
 - `remainingSeconds`
-- `isActive`
-- `tomatoState`
+- `pomodoroState`
+- `phaseStatus`
 - `focusDurationSeconds`
 - `restDurationSeconds`
 - `cycleCount`
 - `completedFocusCycles`
-- `toggleTimer()`
+- `startTimer()`
+- `pauseTimer()`
 - `resetTimer()`
-- `fetchHistoryData()`
+- `updateFocusDuration(int seconds)`
+- `updateRestDuration(int seconds)`
+- `updateCycleCount(int? count)`
 - `initialize()` 或等价启动恢复入口
+
+说明：
+- `isActive` 在当前代码中仍存在，但对目标契约属于过时的重复设计；前端正式联调与展示规则应以 `phaseStatus` 为准，不再把 `isActive` 作为正式 contract 依赖。
+- `fetchHistoryData()` 可作为现有统计占位接口继续保留，但不属于本次前端主闭环 contract。
 
 ### 前端消费规则
 - UI 只读 controller 状态。
@@ -87,40 +98,70 @@
 
 ### 3.2 改造倒计时进度展示
 - [ ] 将当前番茄钟进度组件改为根据 controller 状态推导真实进度。
-- [ ] 根据当前阶段选择总时长：
-  - `studying` → `focusDurationSeconds`
-  - `resting` → `restDurationSeconds`
-- [ ] 使用统一公式推导进度值：`(total - remainingSeconds) / total`
+- [ ] 若 `phaseStatus == ready`，总时长取 `focusDurationSeconds`，进度显示为 `0.0`。
+- [ ] 若当前阶段为 `studying`，总时长取 `focusDurationSeconds`。
+- [ ] 若当前阶段为 `resting` 且 `phaseStatus != ready`，总时长取 `restDurationSeconds`。
+- [ ] 使用统一公式推导进度值：`(total - remainingSeconds) / total`。
 - [ ] 对进度值做边界保护，确保结果始终落在 `0.0 ~ 1.0`。
 - [ ] 不允许继续使用 `_fakeProgress` 作为正式进度来源。
 
 验收标准：
 - 倒计时文本变化时，进度展示与之同步。
 - App 恢复后，文本与进度来自同一恢复值，不出现“时间是真、进度是假”。
+- Ready 态显示下一轮专注默认时长，但进度不误用休息总时长。
 
-### 3.3 保持按钮只驱动 controller
-- [ ] 播放/暂停按钮只调用 `controller.toggleTimer()`。
+### 3.3 明确开始 / 暂停 / 重置三个按钮
+- [ ] 前端提供开始、暂停、重置三个按钮。
+- [ ] `phaseStatus == ready` 时，开始按钮可用，暂停按钮不可用。
+- [ ] `phaseStatus == running` 时，暂停按钮可用，开始按钮不可用。
+- [ ] `phaseStatus == paused` 时，开始按钮作为“继续当前阶段”入口可用，暂停按钮不可用。
+- [ ] 重置按钮在非 ready 状态可用；若产品上决定 ready 态也可点，行为仍只能是幂等重置。
+- [ ] 开始按钮只调用 `controller.startTimer()`。
+- [ ] 暂停按钮只调用 `controller.pauseTimer()`。
 - [ ] 重置按钮只调用 `controller.resetTimer()`。
 - [ ] UI 不再在点击后追加任何本地补丁逻辑。
-- [ ] 播放/暂停按钮图标态仅由 `controller.isActive` 推导。
 
 验收标准：
-- 点击播放、暂停、恢复、重置后，UI 只等待 controller 状态更新并自动重建。
+- 点击开始后进入真实专注态展示。
+- 点击暂停后仅暂停当前阶段，不改变业务阶段。
+- 点击继续后从当前剩余时间恢复，并保持当前暂停阶段语义。
 - Reset 后不再需要 `_resetFakeProgress()` 一类本地辅助方法。
 
 ### 3.4 统一阶段展示语义
-- [ ] 若 UI 需要展示“专注中 / 休息中 / 待开始”等文案，只能由 `tomatoState + isActive` 组合推导。
+- [ ] 若 UI 需要展示“待开始 / 学习中 / 学习暂停 / 休息中 / 休息暂停”等文案，只能由 `pomodoroState + phaseStatus` 组合推导。
 - [ ] 不新增本地阶段变量，不新增 UI 私有状态机。
+- [ ] 不再使用 `isActive` 作为正式阶段文案或按钮态来源。
 
 ---
 
-## 4. MainStage 启动恢复接线任务
+## 4. 配置输入区任务
 
-### 4.1 接入 controller 初始化入口
+### 4.1 固定三个输入框
+- [ ] 前端提供专注时长输入框。
+- [ ] 前端提供休息时长输入框。
+- [ ] 前端提供循环次数输入框。
+- [ ] 本批次只冻结这三个输入项，不额外扩展无限循环、预设模式等控制项。
+
+### 4.2 输入框与 controller 方法绑定
+- [ ] 专注时长输入只调用 `controller.updateFocusDuration(int seconds)`。
+- [ ] 休息时长输入只调用 `controller.updateRestDuration(int seconds)`。
+- [ ] 循环次数输入只调用 `controller.updateCycleCount(int? count)`。
+- [ ] UI 不允许把配置值保存在本地状态里作为正式来源。
+
+### 4.3 输入展示与当前阶段关系
+- [ ] Ready 态更新专注时长后，倒计时展示同步刷新为新的专注默认值。
+- [ ] 运行中或暂停中更新配置时，UI 只反映配置值变化，不伪造当前倒计时已被重算。
+- [ ] 若循环次数被清空，UI 语义明确为“不循环”。
+
+---
+
+## 5. MainStage 启动恢复接线任务
+
+### 5.1 接入 controller 初始化入口
 - [ ] 在 `lib/main.dart` 中于 `MainStage` 生命周期尽早触发 `controller.initialize()` 或等价恢复入口。
 - [ ] 确保正常 UI 交互前，controller 已完成最基本的配置恢复与运行快照恢复。
 
-### 4.2 处理恢复首帧展示
+### 5.2 处理恢复首帧展示
 - [ ] 避免页面先展示默认 `1500` 秒，再跳变为恢复值。
 - [ ] 若 controller 初始化为异步，前端采用最小必要的首帧保护方案。
 - [ ] 首帧保护不得演变为第二套状态源。
@@ -131,31 +172,20 @@
 
 ---
 
-## 5. 统计面板与分享卡片的前端边界调整
+## 6. 统计面板与分享卡片的前端边界调整
 
-### 5.1 统计面板边界
-- [ ] 保留统计按钮触发 `fetchHistoryData()` 的入口。
+### 6.1 统计面板边界
+- [ ] 可继续保留统计入口作为 UI 占位。
+- [ ] 若仍保留 `fetchHistoryData()` 调用，需明确它不属于本次主 contract。
 - [ ] 确保统计操作不影响当前番茄钟计时状态。
 - [ ] 若真实历史结果尚未接通，可继续保留视觉占位，但不得伪造会影响番茄钟主流程的状态。
 
-### 5.2 分享卡片边界
+### 6.2 分享卡片边界
 - [ ] 不再把 `kDefaultPomodoroSeconds - remainingSeconds` 视为“今日学习时长”的正式来源。
 - [ ] 若真实统计摘要尚未接通，应把当前分享卡片明确视为占位展示，而非真实数据展示。
 
 说明：
 - 这两块在本次 change 中不是核心闭环，不应反向拖住番茄钟单一事实源改造。
-
----
-
-## 6. 设置入口相关前端约束
-
-- [ ] 本批次不强制落设置面板最终位置。
-- [ ] 若已有入口占位，保持占位即可。
-- [ ] 后续设置 UI 接入时，只能调用：
-  - `updateFocusDuration(int seconds)`
-  - `updateRestDuration(int seconds)`
-  - `updateCycleCount(int? count)`
-- [ ] 不允许把配置值临时保存在 `UIWidgets` 本地作为正式来源。
 
 ---
 
@@ -166,30 +196,37 @@
 - [ ] 继续用 `_fakeProgress` 顶住真实进度展示。
 - [ ] 用本地 `Timer` 递减 `remainingSeconds` 的视觉替身。
 - [ ] 因 controller 尚未完成而在 UI 层新增一套阶段流转逻辑。
-- [ ] 播放/暂停/重置后在 UI 中额外补业务状态。
+- [ ] 开始 / 暂停 / 重置后在 UI 中额外补业务状态。
 - [ ] 默认值与 controller 契约不一致（focus=1500, rest=300, cycle=null）。
+- [ ] 继续把 `isActive` 当作正式 contract 依赖。
 
 ---
 
 ## 8. 前端验收清单
 
 ### 8.1 基础交互
-- [ ] 点击播放：UI 进入真实专注态展示。
+- [ ] 点击开始：UI 进入真实专注态展示。
 - [ ] 点击暂停：仅暂停当前阶段，不改变错误阶段。
-- [ ] 点击恢复：从当前剩余时间继续。
+- [ ] 点击继续：从当前剩余时间继续，并保持当前暂停阶段语义。
 - [ ] 点击重置：恢复到待开始状态，不需要本地补丁。
 
 ### 8.2 展示一致性
 - [ ] 倒计时文本与进度展示始终来自同一套 controller 状态。
-- [ ] 播放/暂停按钮态始终只由 `isActive` 推导。
+- [ ] 开始 / 暂停 / 重置按钮态始终只由 `phaseStatus` 推导。
 - [ ] 不出现负数秒、不出现越界进度。
+- [ ] Ready 态下进度展示与下一轮专注默认值一致。
 
-### 8.3 恢复场景
+### 8.3 配置输入
+- [ ] 三个输入框都能正确展示 controller 当前配置值。
+- [ ] 三个输入框都只通过对应 controller 方法提交修改。
+- [ ] 修改配置后，UI 不生成第二套本地配置事实源。
+
+### 8.4 恢复场景
 - [ ] App 切后台再回来后，前端不参与恢复计算，只消费恢复后的 controller 状态。
 - [ ] App 重启后，若存在运行快照，前端可直接展示恢复后的剩余时间与对应进度。
 - [ ] 恢复后若阶段已推进，前端显示的阶段文案、按钮态、进度值保持一致。
 
-### 8.4 非核心区块
+### 8.5 非核心区块
 - [ ] 打开统计面板不会打断计时主流程。
 - [ ] 分享卡片不会再伪装成真实学习统计结果。
 
@@ -199,9 +236,10 @@
 
 1. 先按已冻结接口完成前端消费层改造；本地验证可使用契约一致的 stub / mock controller。
 2. 再移除 `UIWidgets` 假进度正式职责。
-3. 接入真实进度推导与按钮纯消费逻辑。
-4. 最后接 `MainStage` 启动恢复入口与首帧保护。
-5. 统计面板、分享卡片、设置入口保持边界内最小调整。
+3. 接入真实进度推导与三个控制按钮的纯消费逻辑。
+4. 接入三个配置输入框与对应 controller 配置方法。
+5. 最后接 `MainStage` 启动恢复入口与首帧保护。
+6. 统计面板、分享卡片保持边界内最小调整。
 ---
 
 ## 10. 完成定义（Frontend DoD）
@@ -209,7 +247,9 @@
 满足以下条件即可视为前端任务完成：
 
 - UI 不再依赖 `_fakeProgress`、`_fakeTimer`、`_resetFakeProgress()` 作为正式番茄钟逻辑来源。
-- 倒计时文本、进度展示、播放/暂停按钮态全部由 controller 单一事实源驱动。
+- 倒计时文本、进度展示、按钮态全部由 controller 单一事实源驱动。
+- 前端已提供开始、暂停、重置三个按钮，且仅通过 controller 显式方法驱动。
+- 前端已提供专注时长、休息时长、循环次数三个输入框，且仅通过 controller 配置方法驱动。
 - `MainStage` 已接入初始化/恢复入口，恢复场景下 UI 不再先展示错误默认值。
 - 分享卡片与统计面板未再破坏番茄钟主流程语义。
-- 前端不存在第二套正式计时或阶段状态。
+- 前端不存在第二套正式计时、阶段状态或配置状态。

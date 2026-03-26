@@ -15,6 +15,29 @@ The system MUST expose controller-level configuration for focus duration and res
 - **WHEN** the user changes the configured rest duration
 - **THEN** the controller stores the new rest duration value for future rest phases
 
+### Requirement: Use minute-based frontend inputs with second-based controller contract
+The frontend MUST expose focus duration and rest duration as minute-based inputs in this change. The controller contract MUST continue using integer seconds. The frontend MUST convert the validated minute input to seconds before calling `updateFocusDuration(int seconds)` or `updateRestDuration(int seconds)`.
+
+#### Scenario: Focus duration input converts minutes to seconds
+- **WHEN** the user enters a minute value in the focus duration input
+- **THEN** the frontend converts that value to seconds before calling `updateFocusDuration(int seconds)`
+
+#### Scenario: Rest duration input converts minutes to seconds
+- **WHEN** the user enters a minute value in the rest duration input
+- **THEN** the frontend converts that value to seconds before calling `updateRestDuration(int seconds)`
+
+### Requirement: Accept only valid finite positive duration values
+The system MUST accept only finite positive integer duration values for focus and rest duration. The system MUST reject zero, negative values, empty input, non-numeric input, and decimal values for this change.
+
+#### Scenario: User enters invalid focus duration
+- **WHEN** the user provides zero, a negative number, empty input, non-numeric input, or a decimal value for focus duration
+- **THEN** the system does not accept that value as a valid focus-duration configuration
+
+#### Scenario: User enters invalid rest duration
+- **WHEN** the user provides zero, a negative number, empty input, non-numeric input, or a decimal value for rest duration
+- **THEN** the system does not accept that value as a valid rest-duration configuration
+
+
 ### Requirement: Refresh ready-state display when focus duration changes
 The system MUST refresh `remainingSeconds` to the configured focus duration when the pomodoro is in the default ready state (`pomodoroState = resting` and `phaseStatus = ready`) and the focus duration is updated. The system MUST NOT silently rewrite the remaining time of an already running or paused phase.
 
@@ -50,11 +73,11 @@ The frontend MUST expose exactly three pomodoro configuration inputs in this cha
 
 #### Scenario: Focus duration input maps to controller method
 - **WHEN** the user edits the focus duration input
-- **THEN** the frontend submits the value through `updateFocusDuration(int seconds)`
+- **THEN** the frontend submits the validated value through `updateFocusDuration(int seconds)`
 
 #### Scenario: Rest duration input maps to controller method
 - **WHEN** the user edits the rest duration input
-- **THEN** the frontend submits the value through `updateRestDuration(int seconds)`
+- **THEN** the frontend submits the validated value through `updateRestDuration(int seconds)`
 
 #### Scenario: Cycle count input maps to controller method
 - **WHEN** the user edits the cycle count input

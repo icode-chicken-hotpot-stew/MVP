@@ -12,9 +12,11 @@
 
 以下约束作为本次设计边界：
 - `AppController` 必须成为番茄钟唯一状态源
-- `resting` / `studying` 是冻结的两态业务状态，不引入第三个 `idle`
+- `pomodoroState` 是冻结的两态业务阶段，不引入第三个 `idle`
+- `pomodoroState` 只给动画、对话、陪伴行为使用：`studying` = 学习动画 + 禁用对话，`resting` = 休息动画 + 允许休息对话
+- `phaseStatus` 只给计时器控制、按钮态、恢复逻辑、持久化使用：`ready` / `running` / `paused`
 - 未运行态需要与业务阶段解耦，Ready / 暂停态由 `phaseStatus` 区分
-- UI 只能读 controller 状态并调用公共方法，不能继续维护正式计时逻辑
+- UI 与其他消费方必须按职责消费状态：陪伴层优先读取 `pomodoroState`，计时/按钮/恢复层优先读取 `phaseStatus`
 - 冷启动默认显示下一轮专注时长，但默认 Ready 态编码为 `pomodoroState = resting` + `phaseStatus = ready`
 
 此外，当前 `pubspec.yaml` 没有番茄钟持久化依赖，因此设计需要兼顾两点：一是允许引入轻量持久化依赖，二是避免在当前 1 周快速开发窗口内把持久化层抽象得过重。
@@ -76,7 +78,33 @@
 - 把计时器和恢复逻辑放到 `UIWidgets`：违背单一事实源原则，放弃。
 - 新建独立 `PomodoroManager` 再由 `AppController` 代理：长期可行，但对当前阶段属于额外抽象，暂不采用。
 
-### 2. 使用“阶段快照 + 开始时间”做持久化模型，而不是只保存剩余秒数
+### 1.5 冻结 `pomodoroState` 与 `phaseStatus` 的职责边界，避免业务语义和运行控制语义混用
+
+采用方案：将两个状态字段的职责严格拆开，并把消费约束直接写入 contract：
+- `pomodoroState` 只表达业务阶段语义，供动画、对话、陪伴行为消费
+- `phaseStatus` 只表达运行控制语义，供计时器控制、按钮态、恢复逻辑、持久化消费
+
+固定解释如下：
+- `pomodoroState = studying`：学习动画、禁用对话
+- `pomodoroState = resting`：休息动画、允许休息对话
+- `phaseStatus = ready`：默认待开始，尚未进入当前轮专注倒计时
+- `phaseStatus = running`：当前阶段运行中
+- `phaseStatus = paused`：当前阶段暂停中
+
+特别说明：Ready 态虽然编码为 `pomodoroState = resting` + `phaseStatus = ready`，但其业务含义不是“当前正在休息”，而是“待开始 / 下一轮专注尚未开始”。因此任何需要区分“真正休息中”与“Ready 占位态”的逻辑，都必须同时判断 `phaseStatus`，不能只看 `pomodoroState`。
+
+推荐的固定映射表：
+- `resting + ready` = 待开始 / 下一轮专注未开始
+- `studying + running` = 学习中
+- `studying + paused` = 学习暂停
+- `resting + running` = 休息中
+- `resting + paused` = 休息暂停
+
+理由：当前用户已经明确要求把陪伴行为语义和计时运行语义拆开。若继续让动画/对话、按钮态、恢复逻辑都混用同一个字段，会再次引入“Ready 看起来像休息态”的歧义，并让后续联调在 UI、controller、陪伴层之间各自解释。
+
+备选方案：
+- 为 Ready 额外新增第三个业务阶段：会破坏当前冻结的 `resting/studying` 两态模型，不采用。
+
 
 采用方案：持久化一个轻量快照对象，至少包括：
 - 当前阶段 `pomodoroState`
@@ -93,6 +121,7 @@
 - 若 `phaseStatus == running`，以 `startedAt + phaseDurationSeconds` 与当前时间重新计算剩余时间
 - 若阶段已过期，则根据状态机自动推进到下一阶段，直到落到一个未过期阶段或待开始状态
 - 若 `phaseStatus == paused` 或 `phaseStatus == ready`，优先恢复最后一次保存的 `remainingSeconds`
+- Ready 态持久化时固定保存：`startedAt = null`、`phaseDurationSeconds = focusDurationSeconds`、`remainingSeconds = focusDurationSeconds`
 
 理由：用户明确要求保存“开始时间”，而现有文档也把开始时间列为恢复的核心字段。只保存剩余秒数无法处理切后台和重启期间的自然流逝，也无法判断阶段是否已过期。
 
@@ -146,12 +175,19 @@
 - 专注结束：`studying/running` → `resting/running`，并 `completedFocusCycles += 1`
 - 休息暂停：`resting/running` → `resting/paused`
 - 休息恢复：`resting/paused` → `resting/running`
-- 休息结束且 `cycleCount == null`：回到 `resting/ready` 且 `remainingSeconds = focusDurationSeconds`
+- 休息结束且 `cycleCount == null`：回到 `resting/ready` 且 `remainingSeconds = focusDurationSeconds`，并将 `completedFocusCycles` 清零
 - 休息结束且 `completedFocusCycles < cycleCount`：进入下一轮 `studying/running`
-- 休息结束且 `completedFocusCycles >= cycleCount`：回到 `resting/ready`
-- 重置：统一回到默认 `resting/ready`
+- 休息结束且 `completedFocusCycles >= cycleCount`：回到 `resting/ready`，并将 `completedFocusCycles` 清零
+- 重置：统一回到默认 `resting/ready`，并将 `completedFocusCycles` 清零
 
-仅靠 `pomodoroState + phaseStatus + remainingSeconds` 已足够区分 Ready、运行中与暂停中；旧设计里引入 `isActive` 只会制造重复状态与同步负担。把“阶段类型”和“阶段状态”拆开后，UI 可直接用 `pomodoroState + phaseStatus` 做确定性展示，同时保留 `remainingSeconds` 作为纯倒计时数据。
+补充规则：
+- `completedFocusCycles` 只表示“当前一轮 pomodoro session”中已完成的专注轮数，不跨 session 累积
+- 每次从 Ready 态启动新 session 时，若当前为默认待开始状态，则从 `completedFocusCycles = 0` 起算
+- 非法时机调用公共方法时统一执行 no-op：
+  - `startTimer()` 在 `phaseStatus == running` 时不改变状态
+  - `pauseTimer()` 在 `phaseStatus == ready` 或 `phaseStatus == paused` 时不改变状态
+  - `resetTimer()` 在 `phaseStatus == ready` 时允许幂等执行
+- no-op 调用不得制造额外阶段流转，不得改写 `pomodoroState` / `phaseStatus` / `remainingSeconds`，也不得额外持久化新快照
 
 备选方案：
 - 新增第三个业务状态如 `idle`：也能消歧，但会改变现有 `resting/studying` 业务语义边界，不如新增 `phaseStatus` 局部且清晰。
@@ -185,16 +221,19 @@
 
 约束：
 - 默认专注时长为 `1500` 秒，默认休息时长为 `300` 秒
+- UI 展示层冻结为“分钟输入”，controller contract 冻结为“秒存储/秒传参”；即前端输入框展示与编辑分钟值，提交前负责换算成秒后调用 controller 方法
+- `focusDurationSeconds` 与 `restDurationSeconds` 只接受正整数秒值；不接受 `0`、负数、空值、非数字，且本次不支持小数分钟输入映射
 - `cycleCount == null` 表示不循环
 - `cycleCount` 只接受 `null` 或正整数，不支持无限循环
 - 若 `phaseStatus == ready`，更新专注时长应同步刷新默认展示的 `remainingSeconds`
-- 运行中更新配置时，只更新后续阶段配置，不偷偷重写当前阶段剩余时间，避免当前阶段语义漂移
+- 运行中或暂停中更新配置时，只更新后续阶段配置，不偷偷重写当前阶段剩余时间，避免当前阶段语义漂移
 
-理由：用户需求已把配置能力列为核心范围。通过显式方法统一更新与持久化，可保持 UI 只表达意图、不直接写状态。
+理由：用户需求已把配置能力列为核心范围。通过显式方法统一更新与持久化，可保持 UI 只表达意图、不直接写状态；同时把“分钟输入 / 秒接口”的边界写死后，前后端联调不会再出现单位漂移。
 
 备选方案：
 - 允许 UI 直接改 notifier：违背当前协作约束，放弃。
 - 配置改动立即重算当前进行中阶段剩余时间：用户感知会混乱，不采用。
+- 让 UI 和 controller 都直接使用分钟：会弱化底层倒计时与持久化的一致单位，不采用。
 
 ### 7. `MainStage` 负责尽早触发恢复初始化，避免 UI 先读取到过时默认值
 

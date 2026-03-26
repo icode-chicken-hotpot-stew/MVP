@@ -7,9 +7,15 @@ The system MUST persist a pomodoro runtime snapshot in local storage when a pomo
 - **WHEN** the user starts the pomodoro from the default ready state
 - **THEN** the system saves a snapshot containing `studying` as the current phase, `running` as the current `phaseStatus`, the new phase start time, the focus phase duration, and the current configuration values
 
-#### Scenario: Save snapshot when timer pauses
-- **WHEN** the user pauses a running pomodoro phase
-- **THEN** the system saves a snapshot containing the current phase type, `paused` as the current `phaseStatus`, and the remaining seconds at the moment of pause
+
+### Requirement: Persist ready-state snapshot with fixed semantics
+The system MUST persist the default ready state using a fixed snapshot shape so recovery and UI derivation stay aligned. A ready-state snapshot MUST use `pomodoroState = resting`, `phaseStatus = ready`, `startedAt = null`, `phaseDurationSeconds = focusDurationSeconds`, and `remainingSeconds = focusDurationSeconds`.
+
+#### Scenario: Save snapshot after reset to ready
+- **WHEN** the pomodoro enters the default ready state after reset
+- **THEN** the persisted snapshot stores `startedAt = null`
+- **AND** it stores `phaseDurationSeconds` equal to the configured focus duration
+- **AND** it stores `remainingSeconds` equal to the configured focus duration
 
 ### Requirement: Use lightweight key-value local storage for pomodoro persistence
 The system MUST implement pomodoro snapshot and configuration persistence using `shared_preferences`-style local key-value storage for this change. The system MUST NOT require a relational schema, multi-table storage model, or heavier database layer to satisfy the current rapid-delivery persistence contract.

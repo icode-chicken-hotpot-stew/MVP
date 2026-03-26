@@ -120,6 +120,7 @@
 - [ ] 暂停按钮只调用 `controller.pauseTimer()`。
 - [ ] 重置按钮只调用 `controller.resetTimer()`。
 - [ ] UI 不再在点击后追加任何本地补丁逻辑。
+- [ ] 不为 controller 的非法调用补前端 fallback 语义；controller 若收到 running 时的 `startTimer()`、ready/paused 时的 `pauseTimer()`，其 contract 为 no-op。
 
 验收标准：
 - 点击开始后进入真实专注态展示。
@@ -129,6 +130,9 @@
 
 ### 3.4 统一阶段展示语义
 - [ ] 若 UI 需要展示“待开始 / 学习中 / 学习暂停 / 休息中 / 休息暂停”等文案，只能由 `pomodoroState + phaseStatus` 组合推导。
+- [ ] 固定解释：`resting + ready` = 待开始 / 下一轮专注未开始，不得解释为“正在休息中”。
+- [ ] `pomodoroState` 的正式职责是业务阶段语义：给动画、对话、陪伴行为使用。
+- [ ] `phaseStatus` 的正式职责是运行控制语义：给计时器控制、按钮态、恢复逻辑、持久化使用。
 - [ ] 不新增本地阶段变量，不新增 UI 私有状态机。
 - [ ] 不再使用 `isActive` 作为正式阶段文案或按钮态来源。
 
@@ -143,10 +147,11 @@
 - [ ] 本批次只冻结这三个输入项，不额外扩展无限循环、预设模式等控制项。
 
 ### 4.2 输入框与 controller 方法绑定
-- [ ] 专注时长输入只调用 `controller.updateFocusDuration(int seconds)`。
-- [ ] 休息时长输入只调用 `controller.updateRestDuration(int seconds)`。
+- [ ] 专注时长输入以“分钟”展示与编辑，提交前换算成秒后再调用 `controller.updateFocusDuration(int seconds)`。
+- [ ] 休息时长输入以“分钟”展示与编辑，提交前换算成秒后再调用 `controller.updateRestDuration(int seconds)`。
 - [ ] 循环次数输入只调用 `controller.updateCycleCount(int? count)`。
 - [ ] UI 不允许把配置值保存在本地状态里作为正式来源。
+- [ ] 专注/休息时长输入只接受正整数分钟；不接受 0、负数、空值、非数字或小数。
 
 ### 4.3 输入展示与当前阶段关系
 - [ ] Ready 态更新专注时长后，倒计时展示同步刷新为新的专注默认值。

@@ -1,0 +1,95 @@
+## ADDED Requirements
+
+### Requirement: Provide configurable focus and rest durations
+The system MUST expose controller-level configuration for focus duration and rest duration. The default focus duration MUST be 1500 seconds and the default rest duration MUST be 300 seconds.
+
+#### Scenario: Default duration values are available on initialization
+- **WHEN** the controller is created without saved configuration
+- **THEN** the focus duration is 1500 seconds and the rest duration is 300 seconds
+
+#### Scenario: User updates focus duration
+- **WHEN** the user changes the configured focus duration
+- **THEN** the controller stores the new focus duration value for future focus phases
+
+#### Scenario: User updates rest duration
+- **WHEN** the user changes the configured rest duration
+- **THEN** the controller stores the new rest duration value for future rest phases
+
+### Requirement: Use minute-based frontend inputs with second-based controller contract
+The frontend MUST expose focus duration and rest duration as minute-based inputs in this change. The controller contract MUST continue using integer seconds. The frontend MUST convert the validated minute input to seconds before calling `updateFocusDuration(int seconds)` or `updateRestDuration(int seconds)`.
+
+#### Scenario: Focus duration input converts minutes to seconds
+- **WHEN** the user enters a minute value in the focus duration input
+- **THEN** the frontend converts that value to seconds before calling `updateFocusDuration(int seconds)`
+
+#### Scenario: Rest duration input converts minutes to seconds
+- **WHEN** the user enters a minute value in the rest duration input
+- **THEN** the frontend converts that value to seconds before calling `updateRestDuration(int seconds)`
+
+### Requirement: Accept only valid finite positive duration values
+The system MUST accept only finite positive integer duration values for focus and rest duration. The system MUST reject zero, negative values, empty input, non-numeric input, and decimal values for this change.
+
+#### Scenario: User enters invalid focus duration
+- **WHEN** the user provides zero, a negative number, empty input, non-numeric input, or a decimal value for focus duration
+- **THEN** the system does not accept that value as a valid focus-duration configuration
+
+#### Scenario: User enters invalid rest duration
+- **WHEN** the user provides zero, a negative number, empty input, non-numeric input, or a decimal value for rest duration
+- **THEN** the system does not accept that value as a valid rest-duration configuration
+
+
+### Requirement: Refresh ready-state display when focus duration changes
+The system MUST refresh `remainingSeconds` to the configured focus duration when the pomodoro is in the default ready state (`pomodoroState = resting` and `phaseStatus = ready`) and the focus duration is updated. The system MUST NOT silently rewrite the remaining time of an already running or paused phase.
+
+#### Scenario: Updating focus duration from ready updates the displayed countdown
+- **WHEN** the pomodoro is in the default ready state and the focus duration is changed
+- **THEN** the controller updates `remainingSeconds` to match the new focus duration
+
+#### Scenario: Updating focus duration during an active phase does not rewrite current countdown
+- **WHEN** the pomodoro is already running and the focus duration is changed
+- **THEN** the controller preserves the current phase countdown and applies the new value only to later eligible phases
+
+#### Scenario: Updating focus duration during a paused phase does not rewrite current countdown
+- **WHEN** the pomodoro is paused in either focus or rest phase and the focus duration is changed
+- **THEN** the controller preserves the paused `remainingSeconds` and applies the new value only to later eligible phases
+
+### Requirement: Support finite cycle counts only
+The system MUST support a cycle count configuration of either `null` for no looping or a positive integer for a finite number of focus cycles. The system MUST reject zero, negative values, and any representation of infinite looping.
+
+#### Scenario: User clears cycle count to disable looping
+- **WHEN** the user removes the configured cycle count
+- **THEN** the controller stores `null` and the pomodoro stops after the current rest completion path returns to ready
+
+#### Scenario: User sets a finite cycle count
+- **WHEN** the user enters a positive integer cycle count
+- **THEN** the controller stores that number as the maximum focus-cycle target
+
+#### Scenario: User attempts to configure an invalid cycle count
+- **WHEN** the user provides zero, a negative number, or an infinite-loop value
+- **THEN** the controller does not accept that value as a valid cycle configuration
+
+### Requirement: Frontend exposes three configuration inputs
+The frontend MUST expose exactly three pomodoro configuration inputs in this change: focus duration, rest duration, and cycle count. These inputs MUST map directly to the controller configuration methods and MUST NOT create a second local configuration source.
+
+#### Scenario: Focus duration input maps to controller method
+- **WHEN** the user edits the focus duration input
+- **THEN** the frontend submits the validated value through `updateFocusDuration(int seconds)`
+
+#### Scenario: Rest duration input maps to controller method
+- **WHEN** the user edits the rest duration input
+- **THEN** the frontend submits the validated value through `updateRestDuration(int seconds)`
+
+#### Scenario: Cycle count input maps to controller method
+- **WHEN** the user edits the cycle count input
+- **THEN** the frontend submits the value through `updateCycleCount(int? count)`
+
+### Requirement: Persist duration and cycle configuration
+The system MUST persist focus duration, rest duration, and cycle count configuration so that configuration survives app restart and is available during recovery.
+
+#### Scenario: Restore saved duration configuration on app start
+- **WHEN** the app starts after the user previously changed focus or rest duration
+- **THEN** the controller restores those saved duration values before exposing pomodoro state to the UI
+
+#### Scenario: Restore saved cycle configuration on app start
+- **WHEN** the app starts after the user previously configured a finite cycle count
+- **THEN** the controller restores that cycle count before evaluating subsequent phase transitions

@@ -27,6 +27,11 @@ class AppController {
     return '${now.year}年${now.month}月${now.day}日';
   }
 
+  /// 可配置时长（秒）和循环数，由新增 UI 输入接口控制
+  int focusDurationSeconds = kDefaultPomodoroSeconds;
+  int restDurationSeconds = 300;
+  int? cycleCount;
+
   AppController({
     int initialSeconds = kDefaultPomodoroSeconds,
     bool initialActive = false,
@@ -36,6 +41,26 @@ class AppController {
        isActive = ValueNotifier<bool>(initialActive),
        isDrawerOpen = ValueNotifier<bool>(initialDrawerOpen),
        currentDate = ValueNotifier<String>(initialDate ?? _formatCurrentDate());
+
+  // ============ 可配置接口 ============
+  void updateFocusDuration(int seconds) {
+    if (seconds <= 0) return;
+    focusDurationSeconds = seconds;
+    // 只在 ready 状态时更新 remainingSeconds。
+    if (!isActive.value && remainingSeconds.value == kDefaultPomodoroSeconds) {
+      remainingSeconds.value = focusDurationSeconds;
+    }
+  }
+
+  void updateRestDuration(int seconds) {
+    if (seconds <= 0) return;
+    restDurationSeconds = seconds;
+  }
+
+  void updateCycleCount(int? count) {
+    if (count != null && count <= 0) return;
+    cycleCount = count;
+  }
 
   // ============ 逻辑触发接口 ============
   /// 切换计时器的开始与暂停（由组员 C 填充逻辑）

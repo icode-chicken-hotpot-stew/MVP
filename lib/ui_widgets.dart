@@ -29,7 +29,12 @@ class _UIWidgetsState extends State<UIWidgets> {
   // 【V2复古风新增】记录音乐是否正在播放
   // 它的正确位置在这里！和上面这些状态变量做邻居
   // ==============================
-  bool _isMusicPlaying = false; 
+  bool _isMusicPlaying = false;
+
+  bool _isPomodoroConfigOpen = false;
+  final TextEditingController _focusMinutesController = TextEditingController();
+  final TextEditingController _restMinutesController = TextEditingController();
+  final TextEditingController _cycleCountController = TextEditingController();
 
   @override
   void initState() {
@@ -51,6 +56,9 @@ class _UIWidgetsState extends State<UIWidgets> {
   void dispose() {
     widget.controller.isActive.removeListener(_activeListener);
     _fakeTimer?.cancel();
+    _focusMinutesController.dispose();
+    _restMinutesController.dispose();
+    _cycleCountController.dispose();
     super.dispose();
   }
 
@@ -77,6 +85,38 @@ class _UIWidgetsState extends State<UIWidgets> {
     });
   }
 
+  void _openPomodoroConfig() {
+    setState(() {
+      _isPomodoroConfigOpen = true;
+      _focusMinutesController.text = (widget.controller.focusDurationSeconds ~/ 60).toString();
+      _restMinutesController.text = (widget.controller.restDurationSeconds ~/ 60).toString();
+      _cycleCountController.text = widget.controller.cycleCount?.toString() ?? '';
+    });
+  }
+
+  void _closePomodoroConfig() {
+    setState(() {
+      _isPomodoroConfigOpen = false;
+    });
+  }
+
+  void _savePomodoroConfig() {
+    final focusValue = int.tryParse(_focusMinutesController.text);
+    final restValue = int.tryParse(_restMinutesController.text);
+    final cycleValue = int.tryParse(_cycleCountController.text);
+
+    if (focusValue != null && focusValue > 0) {
+      widget.controller.updateFocusDuration(focusValue * 60);
+    }
+    if (restValue != null && restValue > 0) {
+      widget.controller.updateRestDuration(restValue * 60);
+    }
+
+    widget.controller.updateCycleCount(cycleValue == null || cycleValue <= 0 ? null : cycleValue);
+
+    _closePomodoroConfig();
+  }
+
   // ===============================
   // 【V2复古风新增】全局点击关闭所有磁贴
   // ===============================
@@ -86,6 +126,7 @@ class _UIWidgetsState extends State<UIWidgets> {
       _isStatsExpanded = false;
       _isExpExpanded = false;
       _isMusicExpanded = false;
+      _isPomodoroConfigOpen = false;
     });
   }
 
@@ -237,7 +278,7 @@ class _UIWidgetsState extends State<UIWidgets> {
           duration: const Duration(milliseconds: 300),
           // 【核心修复】将 easeOutBack 改为 easeOut，去掉回弹效果，杜绝负数引发红屏
           curve: Curves.easeOut,
-          height: _isTomatoExpanded ? 160 : 0,
+          height: _isTomatoExpanded ? (_isPomodoroConfigOpen ? 280 : 160) : 0,
           width: 180,
           margin: EdgeInsets.only(top: _isTomatoExpanded ? 10 : 0),
           clipBehavior: Clip.hardEdge, 
@@ -310,7 +351,60 @@ class _UIWidgetsState extends State<UIWidgets> {
                       },
                     ),
                   ],
-                )
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF5D4037),
+                    minimumSize: const Size(120, 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  onPressed: _openPomodoroConfig,
+                  child: const Text('自定义番茄设置', style: TextStyle(fontSize: 12))
+                ),
+                if (_isPomodoroConfigOpen)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.all(8),
+                    width: 170,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.96),
+                      border: Border.all(color: const Color(0xFF795548), width: 1),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('焦距/休息/循环(次)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5D4037))),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(child: TextField(controller: _focusMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '专注(分)', border: OutlineInputBorder()))),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(child: TextField(controller: _restMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '休息(分)', border: OutlineInputBorder()))),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(child: TextField(controller: _cycleCountController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '循环(次)', border: OutlineInputBorder()))),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(onPressed: _closePomodoroConfig, child: const Text('取消', style: TextStyle(fontSize: 12))),
+                            TextButton(onPressed: _savePomodoroConfig, child: const Text('保存', style: TextStyle(fontSize: 12))),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -622,48 +716,10 @@ class _UIWidgetsState extends State<UIWidgets> {
 
   
   // 【对接队友接口】人物动画层
-  // ==========================================
-  // Widget _buildCharacterStage(BuildContext context) {
-  //   return ValueListenableBuilder<bool>(
-  //     valueListenable: widget.controller.isActive,
-  //     builder: (context, active, _) {
-  //       // [DEBUG] 队友加的调试打印保留
-  //       debugPrint('[DEBUG][CharacterStage] active=$active');
-        
-  //       // ✅ 直接调用写好的 CharacterView，传入 active 状态
-  //       return CharacterView(isActive: active); 
-  //     },
-  //   );
-  // }
-  
-  // ==========================================
-  // 【动画临时占位】 - 现已加入全屏背景大图！
-  // ==========================================
-  Widget _buildCharacterStage(BuildContext context) {
-    return Container(
-      // 【背景图加入点】在这里加上背景图片
-      decoration: const BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage('assets/images/background.webp'), // 注意后缀规范哦
-          fit: BoxFit.cover, // 让背景图铺满整个屏幕
-          alignment: Alignment.bottomCenter, // 如果依然用 cover，打开这行可以优先显示底部
-        ),
-      ),
-      alignment: Alignment.center,
-      child: const Text(
-        "小人动画施工中...\n(咱们先把复古 UI 跑通)",
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: Colors.brown, 
-          fontSize: 18, 
-          fontWeight: FontWeight.bold,
-          // 如果背景太花，可以给这行占位字加个浅色阴影发光，保证你看得清
-          shadows: [BoxShadow(color: Colors.white, blurRadius: 10)] 
-        ),
-      ),
-    );
-  }
+  // 保留你现在的 live2d 组件版本（全屏式舞台）
+  // 如上面 _buildCharacterStage() 已实现，无需重复定义
 }
+
 
 // ===============================
 // 【MVP原有逻辑】保留：分享卡片弹窗

@@ -2,7 +2,7 @@ import 'dart:async';
 //import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'app_controller.dart';
-//import 'character_view.dart';
+import 'character_view.dart';
 
 
 /// 前端交互面板：监听状态并更新 UI 面板与统计图表
@@ -87,6 +87,16 @@ class _UIWidgetsState extends State<UIWidgets> {
       _isExpExpanded = false;
       _isMusicExpanded = false;
     });
+  }
+
+  Widget _buildCharacterStage(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: widget.controller.isActive,
+      builder: (context, active, _) {
+        debugPrint('[DEBUG][CharacterStage] active=$active');
+        return CharacterView(isActive: active);
+      },
+    );
   }
 
   @override

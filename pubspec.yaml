@@ -10,6 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   google_fonts: ^8.0.2
+  webview_flutter: ^4.11.0
+  webview_flutter_android: ^4.10.11
 
 dev_dependencies:
   flutter_test:
@@ -21,7 +23,11 @@ flutter:
   assets:
     - assets/background.webp
     - assets/images/
-    
+    - assets/live2d/hiyori_viewer.html
+    - assets/live2d/libs/
+    - assets/live2d/hiyori/
+    - assets/live2d/hiyori/Hiyori.2048/
+
 fonts:
   - family: ZhuoKai
     fonts:

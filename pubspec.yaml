@@ -32,3 +32,6 @@ fonts:
   - family: ZhuoKai
     fonts:
       - asset: assets/fonts/Jiangxizhuokai.ttf
+  - family: ZCOOLKuaiLe-Regular
+    fonts:
+      - asset: assets/fonts/ZCOOLKuaiLe-Regular.ttf

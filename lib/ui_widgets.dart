@@ -31,6 +31,11 @@ class _UIWidgetsState extends State<UIWidgets> {
   // ==============================
   bool _isMusicPlaying = false;
 
+  // 【新增】缩放动画状态变量
+  bool _isTomatoScaling = false;
+  bool _isExpScaling = false;
+  bool _isStatsScaling = false;
+
   bool _isPomodoroConfigOpen = false;
   final TextEditingController _focusMinutesController = TextEditingController();
   final TextEditingController _restMinutesController = TextEditingController();
@@ -97,6 +102,24 @@ class _UIWidgetsState extends State<UIWidgets> {
   void _closePomodoroConfig() {
     setState(() {
       _isPomodoroConfigOpen = false;
+    });
+  }
+
+  // 【新增】缩放动画方法
+  void _triggerScaleAnimation(String type) {
+    setState(() {
+      if (type == 'tomato') _isTomatoScaling = true;
+      else if (type == 'exp') _isExpScaling = true;
+      else if (type == 'stats') _isStatsScaling = true;
+    });
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (mounted) {
+        setState(() {
+          if (type == 'tomato') _isTomatoScaling = false;
+          else if (type == 'exp') _isExpScaling = false;
+          else if (type == 'stats') _isStatsScaling = false;
+        });
+      }
     });
   }
 
@@ -247,165 +270,251 @@ class _UIWidgetsState extends State<UIWidgets> {
   // 注意：目前用色块+基础图标占位，后期把 Container 换成 Image.asset 即可
   // ==========================================
 
-    // 【V2复古风新增】番茄钟按钮与磁贴
-  Widget _buildTomatoTimerDrop() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+   Widget _buildTomatoTimerDrop() {
+    return Stack(
+      // 【本次修改】整体外层改为 Stack，便于让自定义配置面板在右侧层叠弹出
+      clipBehavior: Clip.none, 
       children: [
-        // 按钮本体 (已为你替换为图片结构)
-        GestureDetector(
-          onTap: () => setState(() {
-            _isTomatoExpanded = !_isTomatoExpanded;
-            if(_isTomatoExpanded) { _isStatsExpanded=false; _isExpExpanded=false;}
-          }),
-          child: Container(
-            width: 45, height: 45,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              // 给番茄按钮加一点淡淡的常驻阴影，更有立体感
-              boxShadow: [BoxShadow(color: Colors.black45, blurRadius: 5, offset: Offset(0, 3))],
-            ),
-            // 【本次修改】这里为你留好了番茄图片的坑位，直接改路径就行！
-            child: Image.asset(
-              'assets/images/tomato_btn.png', 
-              fit: BoxFit.contain,
-            ),
-          ),
-        ),
-        
-        // 下拉活页便签磁贴 (现已改为浅色便签纸)
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          // 【核心修复】将 easeOutBack 改为 easeOut，去掉回弹效果，杜绝负数引发红屏
-          curve: Curves.easeOut,
-          height: _isTomatoExpanded ? (_isPomodoroConfigOpen ? 280 : 160) : 0,
-          width: 180,
-          margin: EdgeInsets.only(top: _isTomatoExpanded ? 10 : 0),
-          clipBehavior: Clip.hardEdge, 
-          decoration: BoxDecoration(
-            // 【便签质感修改】换成白底便签图片
-            image: _isTomatoExpanded ? const DecorationImage(
-              image: AssetImage('assets/images/memo_bg.png'), // 替换为你的便签图片
-              fit: BoxFit.fill,
-            ) : null,
-           
-            // 【核心修复】保持两边都有 BoxShadow 对象，只让透明度和 blurRadius 归零，动画更丝滑
-            // boxShadow: [
-              // BoxShadow(
-              //   // 【便签阴影】便签的阴影稍微轻巧一点
-              //   color: _isTomatoExpanded ? Colors.black26 : Colors.transparent,
-              //   blurRadius: _isTomatoExpanded ? 8.0 : 0.0,
-              //   offset: const Offset(0, 4)
-              // )
-            // ],
-          ),
-          child: SingleChildScrollView(
-            // 【优化】防止在收起面板的时候手误滑动内容导致溢出
-            physics: const NeverScrollableScrollPhysics(), 
-            child: Column(
-              children: [
-                const SizedBox(height: 33),
-                // 红色圆框进度条
-                Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 70, height: 70,
-                      child: CircularProgressIndicator(
-                        value: _fakeProgress,
-                        // 【适配便签】底色变浅了，这里的颜色换回复古红和深灰
-                        color: const Color.fromARGB(255, 204, 196, 195), // 白色进度
-                        backgroundColor: const Color.fromARGB(255, 179, 22, 22), // 红色初始轨道
-                        strokeWidth: 6,
-                      ),
-                    ),
-                    // 内部时间
-                    ValueListenableBuilder<int>(
-                      valueListenable: widget.controller.remainingSeconds,
-                      builder: (context, seconds, _) {
-                        final time = "${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}";
-                        // 【适配便签】文字颜色改为深棕色，在白底便签上才清晰
-                        return Text(time, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF5D4037)));
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                // 控制按钮：播放/重置
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      icon: Icon(widget.controller.isActive.value ? Icons.pause : Icons.play_arrow, size: 28),
-                      // 【适配便签】图标颜色改为深棕色
-                      color: const Color(0xFF5D4037),
-                      onPressed: () => widget.controller.toggleTimer(),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh), 
-                      // 【适配便签】图标颜色改为深棕色
-                      color: const Color(0xFF5D4037),
-                      onPressed: () {
-                        widget.controller.resetTimer();
-                        _resetFakeProgress();
-                      },
-                    ),
-                  ],
-                ),
-                TextButton(
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF5D4037),
-                    minimumSize: const Size(120, 30),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+        // 【核心修复】增加一个透明占位层，确保右侧 Positioned 区域能接收到点击事件
+        // 如果没有这个，Positioned 弹出的面板在 hit-test 阶段会被忽略，导致键盘弹不出
+        if (_isTomatoExpanded && _isPomodoroConfigOpen)
+          const SizedBox(width: 360, height: 300),
+
+        // 1. Column 包含番茄按钮和便签磁贴
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 按钮本体 (已为你替换为图片结构)
+            GestureDetector(
+              onTap: () {
+                _triggerScaleAnimation('tomato');
+                setState(() {
+                  _isTomatoExpanded = !_isTomatoExpanded;
+                  if(_isTomatoExpanded) { 
+                    _isStatsExpanded=false; 
+                    _isExpExpanded=false;
+                    // 【新增逻辑】每次点击主按钮展开/收起时，强制先关闭自定义配置面板，防止它“蹦出来”
+                    _isPomodoroConfigOpen = false; 
+                  }
+                });
+              },
+              child: AnimatedScale(
+                scale: _isTomatoScaling ? 0.9 : 1.0,
+                duration: const Duration(milliseconds: 150),
+                child: Container(
+                  width: 45, height: 45,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    // 给番茄按钮加一点淡淡的常驻阴影，更有立体感
+                    boxShadow: [BoxShadow(color: Colors.black45, blurRadius: 5, offset: Offset(0, 3))],
                   ),
-                  onPressed: _openPomodoroConfig,
-                  child: const Text('自定义番茄设置', style: TextStyle(fontSize: 12))
+                  // 【本次修改】这里为你留好了番茄图片的坑位，直接改路径就行！
+                  child: Image.asset(
+                    'assets/images/tomato_btn.png', 
+                    fit: BoxFit.contain,
+                  ),
                 ),
-                if (_isPomodoroConfigOpen)
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    padding: const EdgeInsets.all(8),
-                    width: 170,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.96),
-                      border: Border.all(color: const Color(0xFF795548), width: 1),
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+              ),
+            ),
+            
+            // 下拉活页便签磁贴 (现已改为浅色便签纸)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              // 【核心修复】将 easeOutBack 改为 easeOut，去掉回弹效果，杜绝负数引发红屏
+              curve: Curves.easeOut,
+              // 【本次修改】便签的高度不再根据配置面板开启而变大，配置面板已移至右侧弹出
+              height: _isTomatoExpanded ? 160 : 0, 
+              width: 180,
+              margin: EdgeInsets.only(top: _isTomatoExpanded ? 10 : 0),
+              clipBehavior: Clip.hardEdge, 
+              decoration: BoxDecoration(
+                // 【便签质感修改】换成白底便签图片
+                image: _isTomatoExpanded ? const DecorationImage(
+                  image: AssetImage('assets/images/memo_bg.png'), // 替换为你的便签图片
+                  fit: BoxFit.fill,
+                ) : null,
+               
+                // 【核心修复】保持两边都有 BoxShadow 对象，只让透明度和 blurRadius 归零，动画更丝滑
+                // boxShadow: [
+                  // BoxShadow(
+                  //   // 【便签阴影】便签的阴影稍微轻巧一点
+                  //   color: _isTomatoExpanded ? Colors.black26 : Colors.transparent,
+                  //   blurRadius: _isTomatoExpanded ? 8.0 : 0.0,
+                  //   offset: const Offset(0, 4)
+                  // )
+                // ],
+              ),
+              child: SingleChildScrollView(
+                // 【优化】防止在收起面板的时候手误滑动内容导致溢出
+                physics: const NeverScrollableScrollPhysics(), 
+                child: Column(
+                  children: [
+                    const SizedBox(height: 33),
+                    // 红色圆框进度条
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 70, height: 70,
+                          child: CircularProgressIndicator(
+                            value: _fakeProgress,
+                            // 【适配便签】底色变浅了，这里的颜色换回复古红和深灰
+                            color: const Color.fromARGB(255, 204, 196, 195), // 白色进度
+                            backgroundColor: const Color.fromARGB(255, 179, 22, 22), // 红色初始轨道
+                            strokeWidth: 6,
+                          ),
+                        ),
+                        // 内部时间
+                        // 【核心修复】重新明确参数，解决 valueListenable 报错
+                        ValueListenableBuilder<int>(
+                          valueListenable: widget.controller.remainingSeconds,
+                          builder: (BuildContext context, int seconds, Widget? child) {
+                            final time = "${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}";
+                            // 【适配便签】文字颜色改为深棕色，在白底便签上才清晰
+                            return Text(time, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF5D4037), fontFamily: 'ZCOOLKuaiLe-Regular'));
+                          },
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 5),
+                    // 【本次修改】重新排列按钮：重置放左边，播放放中间，自定义按钮放右边 (临时占位)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // 【本次修改】重置按钮放左边
+                        IconButton(
+                          icon: const Icon(Icons.refresh), 
+                          // 【适配便签】图标颜色改为深棕色
+                          color: const Color(0xFF5D4037),
+                          onPressed: () {
+                            widget.controller.resetTimer();
+                            _resetFakeProgress();
+                          },
+                        ),
+                        
+                        // 【本次修改】播放按钮放中间
+                        IconButton(
+                          icon: Icon(widget.controller.isActive.value ? Icons.pause : Icons.play_arrow, size: 28),
+                          // 【适配便签】图标颜色改为深棕色
+                          color: const Color(0xFF5D4037),
+                          onPressed: () => widget.controller.toggleTimer(),
+                        ),
+                        
+                        // 【本次修改】自定义铅笔按钮放右边 (临时占位)
+                        // 下方是为你留好的铅笔图片引入坑位，参考下方教程进行操作
+                        const SizedBox(width: 8), // 按钮间距
+                        /*
+                        // 【教程：铅笔按钮引入】
+                        // 将此 IconButton 替换为以下代码块
+                        GestureDetector(
+                          onTap: _openPomodoroConfig,
+                          child: SizedBox(
+                            width: 32, height: 32, // 规范大小
+                            child: Image.asset(
+                              'assets/images/btn_pencil.png', // 规范命名：btn_pencil.png
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                        */
+                        IconButton(
+                          icon: const Icon(Icons.edit), // 临时铅笔占位
+                          // 【适配便签】图标颜色改为深棕色
+                          color: const Color(0xFF5D4037),
+                          onPressed: _openPomodoroConfig,
+                        ),
+                      ],
+                    ),
+                    
+                    /*
+                    // 【本次修改】原来的 TextButton 被移动到上面的 Row 中作为铅笔图标
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF5D4037),
+                        minimumSize: const Size(120, 30),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      onPressed: _openPomodoroConfig,
+                      child: const Text('自定义番茄设置', style: TextStyle(fontSize: 12))
+                    ),
+                    */
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        // 2. Positioned 自定义配置面板 (在便签右侧弹出)
+        // 【核心修改】这里是配置弹出面板的新宿主
+        Positioned(
+          top: 55, // 按钮高度+spacer
+          left: 180 + 10, // 便签宽度 + margin
+          child: GestureDetector(
+            // 【核心修复】增加透明点击行为拦截，防止事件流失，并强制拦截父级手势
+            behavior: HitTestBehavior.opaque,
+            onTap: () {}, 
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              // 【核心动画逻辑】这里加入 topCenter 甚至 topRight 对齐，
+              // 配合 hardEdge 裁剪，就能模拟出从边缘拉出的完美手感！
+              alignment: Alignment.topLeft, 
+              height: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 240 : 0, // 撑开高度
+              width: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 170 : 0, // 撑开宽度
+              clipBehavior: Clip.hardEdge, 
+              margin: const EdgeInsets.only(top: 0),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.96),
+                border: Border.all(color: const Color(0xFF795548), width: 1),
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+              ),
+              // 【核心修复】必须有 Material，否则 TextField 在 Stack 里无法获得渲染层级来弹出键盘
+              child: Material(
+                color: Colors.transparent,
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Padding(
+                    // 给弹出面板一些 padding
+                    padding: const EdgeInsets.all(8.0), 
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('焦距/休息/循环(次)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5D4037))),
+                        const Text('专注/休息/循环(次)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5D4037), fontFamily: 'ZCOOLKuaiLe-Regular')),
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            Expanded(child: TextField(controller: _focusMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '专注(分)', border: OutlineInputBorder()))),
+                            Expanded(child: TextField(controller: _focusMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '专注(分)', floatingLabelBehavior: FloatingLabelBehavior.always, border: OutlineInputBorder()))),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            Expanded(child: TextField(controller: _restMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '休息(分)', border: OutlineInputBorder()))),
+                            Expanded(child: TextField(controller: _restMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '休息(分)', floatingLabelBehavior: FloatingLabelBehavior.always, border: OutlineInputBorder()))),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            Expanded(child: TextField(controller: _cycleCountController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '循环(次)', border: OutlineInputBorder()))),
+                            // 【核心修复】加入 always 标签行为，防止文字过长遮挡点击区域
+                            Expanded(child: TextField(controller: _cycleCountController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '循环(次)', floatingLabelBehavior: FloatingLabelBehavior.always, border: OutlineInputBorder()))),
                           ],
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 10),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
+                          // 【核心修复】改成 SpaceBetween 保持取消保存左右对称
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            TextButton(onPressed: _closePomodoroConfig, child: const Text('取消', style: TextStyle(fontSize: 12))),
-                            TextButton(onPressed: _savePomodoroConfig, child: const Text('保存', style: TextStyle(fontSize: 12))),
+                            TextButton(onPressed: _closePomodoroConfig, child: const Text('取消', style: TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'ZCOOLKuaiLe-Regular'))),
+                            TextButton(onPressed: _savePomodoroConfig, child: const Text('保存', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF5D4037), fontFamily: 'ZCOOLKuaiLe-Regular'))),
                           ],
                         ),
                       ],
                     ),
                   ),
-              ],
+                ),
+              ),
             ),
           ),
         ),
@@ -421,24 +530,31 @@ class _UIWidgetsState extends State<UIWidgets> {
       children: [
         // 经验条本体 (卷轴卷起状态)
         GestureDetector(
-          onTap: () => setState(() {
-            _isExpExpanded = !_isExpExpanded;
-             if(_isExpExpanded) { _isTomatoExpanded=false; _isStatsExpanded=false;}
-          }),
-          child: Container(
-            width: 100, height: 35,
-            decoration: const BoxDecoration(
-              // 【本次修改】原注释保留：占位：牛皮纸色。现已替换为你的卷轴本体图片
-              image: DecorationImage(
-                image: AssetImage('assets/images/scroll_rolled.png'), // 替换为你的卷起图片名
-                fit: BoxFit.contain,
+          onTap: () {
+            _triggerScaleAnimation('exp');
+            setState(() {
+              _isExpExpanded = !_isExpExpanded;
+               if(_isExpExpanded) { _isTomatoExpanded=false; _isStatsExpanded=false;}
+            });
+          },
+          child: AnimatedScale(
+            scale: _isExpScaling ? 0.9 : 1.0,
+            duration: const Duration(milliseconds: 150),
+            child: Container(
+              width: 100, height: 35,
+              decoration: const BoxDecoration(
+                // 【本次修改】原注释保留：占位：牛皮纸色。现已替换为你的卷轴本体图片
+                image: DecorationImage(
+                  image: AssetImage('assets/images/scroll_rolled.png'), // 替换为你的卷起图片名
+                  fit: BoxFit.contain,
+                ),
+                // 原来的颜色和边框注释掉，全权交给你的精美图片
+                // color: const Color(0xFFD2B48C), 
+                // borderRadius: BorderRadius.circular(5),
+                // border: Border.all(color: Colors.brown[700]!, width: 2),
               ),
-              // 原来的颜色和边框注释掉，全权交给你的精美图片
-              // color: const Color(0xFFD2B48C), 
-              // borderRadius: BorderRadius.circular(5),
-              // border: Border.all(color: Colors.brown[700]!, width: 2),
+              
             ),
-            
           ),
         ),
         
@@ -485,13 +601,13 @@ class _UIWidgetsState extends State<UIWidgets> {
                   Text(
                     "Lv. 5 学徒", 
                     textAlign: TextAlign.center, // 【本次修改】文字居中
-                    style: TextStyle(color: Colors.brown[900], fontWeight: FontWeight.bold, fontSize: 16)
+                    style: TextStyle(color: Colors.brown[900], fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'ZCOOLKuaiLe-Regular')
                   ),
                   const SizedBox(height: 8),
                   Text(
                     "再专注 120 分钟\n即可升级", // 【本次修改】加个换行 `\n`，更贴合竖向排版
                     textAlign: TextAlign.center, // 【本次修改】文字居中
-                    style: TextStyle(color: Colors.brown[800], fontSize: 12, height: 1.4)
+                    style: TextStyle(color: Colors.brown[800], fontSize: 12, height: 1.4, fontFamily: 'ZCOOLKuaiLe-Regular')
                   ),
                 ],
               ),
@@ -510,26 +626,31 @@ class _UIWidgetsState extends State<UIWidgets> {
         // 黑板按钮
         GestureDetector(
           onTap: () {
+            _triggerScaleAnimation('stats');
             setState(() {
               _isStatsExpanded = !_isStatsExpanded;
                if(_isStatsExpanded) { _isTomatoExpanded=false; _isExpExpanded=false;}
             });
             if (_isStatsExpanded) widget.controller.fetchHistoryData(); // 后端接口依然健在！
           },
-          child: Container(
-            width: 50, height: 50,
-            decoration: const BoxDecoration(
-              // 【本次修改】换成了图片占位
-              image: DecorationImage(
-                image: AssetImage('assets/images/board_btn.png'), // 替换为生成的黑板按钮图片
-                fit: BoxFit.contain,
+          child: AnimatedScale(
+            scale: _isStatsScaling ? 0.9 : 1.0,
+            duration: const Duration(milliseconds: 150),
+            child: Container(
+              width: 50, height: 50,
+              decoration: const BoxDecoration(
+                // 【本次修改】换成了图片占位
+                image: DecorationImage(
+                  image: AssetImage('assets/images/board_btn.png'), // 替换为生成的黑板按钮图片
+                  fit: BoxFit.contain,
+                ),
+                // color: const Color(0xFF2E3B32), // 占位：黑板墨绿色
+                // borderRadius: BorderRadius.circular(8),
+                // border: Border.all(color: Colors.brown[400]!, width: 3), // 木边框
               ),
-              // color: const Color(0xFF2E3B32), // 占位：黑板墨绿色
-              // borderRadius: BorderRadius.circular(8),
-              // border: Border.all(color: Colors.brown[400]!, width: 3), // 木边框
+              // 【本次修改】去掉了 Icon
+              // child: const Icon(Icons.bar_chart, color: Colors.white70),
             ),
-            // 【本次修改】去掉了 Icon
-            // child: const Icon(Icons.bar_chart, color: Colors.white70),
           ),
         ),
         // ==============================
@@ -827,7 +948,7 @@ class _ChatBubbleState extends State<ChatBubble> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_displayedText, style: const TextStyle(fontSize: 15, height: 1.4, color: Color(0xFF5D4037))),
+                Text(_displayedText, style: const TextStyle(fontSize: 15, height: 1.4, color: Color(0xFF5D4037), fontFamily: 'ZCOOLKuaiLe-Regular')),
                 const SizedBox(height: 15),
               ],
             ),

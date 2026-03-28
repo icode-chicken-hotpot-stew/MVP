@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  google_fonts: ^8.0.2
   webview_flutter: ^4.11.0
   webview_flutter_android: ^4.10.11
   shared_preferences: ^2.5.3
@@ -22,7 +23,16 @@ flutter:
   uses-material-design: true
   assets:
     - assets/background.webp
+    - assets/images/
     - assets/live2d/hiyori_viewer.html
     - assets/live2d/libs/
     - assets/live2d/hiyori/
     - assets/live2d/hiyori/Hiyori.2048/
+
+fonts:
+  - family: ZhuoKai
+    fonts:
+      - asset: assets/fonts/Jiangxizhuokai.ttf
+  - family: ZCOOLKuaiLe-Regular
+    fonts:
+      - asset: assets/fonts/ZCOOLKuaiLe-Regular.ttf

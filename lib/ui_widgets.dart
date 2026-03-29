@@ -167,19 +167,6 @@ class _UIWidgetsState extends State<UIWidgets> {
     });
   }
 
-  /// 播放Smile动画，并在播放期间禁用点击
-  void _playSmileAnimation() {
-    // 设置动画播放中状态
-    widget.controller.isAnimationPlaying.value = true;
-    
-    // 1.7秒后恢复点击能力（smile动画时长）
-    Future.delayed(const Duration(milliseconds: 1700), () {
-      if (mounted) {
-        widget.controller.isAnimationPlaying.value = false;
-      }
-    });
-  }
-
   Widget _buildCharacterStage(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: widget.controller.isActive,
@@ -198,15 +185,7 @@ class _UIWidgetsState extends State<UIWidgets> {
       body: GestureDetector(
         behavior: HitTestBehavior.translucent, // 允许穿透到底层背景
         onTap: () {
-          // 【新增】禁用动画播放中的点击
-          if (widget.controller.isAnimationPlaying.value) {
-            return; // 动画播放中，忽略该次点击
-          }
-          
           _closeAllPanels();
-          
-          // 【新增】点击时播放Smile动画
-          _playSmileAnimation();
           // 【V2 接口对接】如果正在对话，点击空白处推进下一句
           // widget.controller.nextDialogue(); // 假设后端提供了这个方法
         },

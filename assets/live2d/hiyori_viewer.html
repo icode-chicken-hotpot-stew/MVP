@@ -415,14 +415,15 @@
         // Keep HTML Y anchor neutral; let Flutter verticalOffset drive final Y movement.
         const LAYER_BASE_Y_RATIO = 0.5;
         const LAYER_OFFSET_Y_PX = 0;
-        const LAYER_OFFSET_X_PX = 90;
-        const ENABLE_TOP_CLAMP = false;
+        const LAYER_OFFSET_X_PX = 0;
+        const ENABLE_TOP_CLAMP = true;
         const SAFE_TOP_PADDING_PX = 16;
         const MAX_TOP_CLAMP_PX = 48;
         let _externalOffsetX = 0;
         let _externalOffsetY = 0;
         let _currentCharacterState = 'normal';
         let _pendingCharacterState = null;
+        let _isTransientMotionPlaying = false;
         let _motionGroupNameMap = {};
         let _canPlaySmileOnTap = true;
         const SMILE_MOTION_DURATION_MS = 1700;
@@ -456,6 +457,36 @@
             console.log('[Live2D]', message);
             if (window.Live2DController) {
                 Live2DController.postMessage(message);
+            }
+        }
+
+        function triggerSmileMotion() {
+            if (!_canPlaySmileOnTap) {
+                return;
+            }
+            _canPlaySmileOnTap = false;
+            _isTransientMotionPlaying = true;
+            updateStatus('Model clicked!');
+            playMotionByName('Smile', 0);
+            setTimeout(() => {
+                _canPlaySmileOnTap = true;
+                _isTransientMotionPlaying = false;
+                flushQueuedCharacterState();
+            }, SMILE_MOTION_DURATION_MS);
+        }
+
+        function flushQueuedCharacterState() {
+            if (_isTransientMotionPlaying || !model) {
+                return;
+            }
+
+            const next = _pendingCharacterState || _currentCharacterState;
+            _pendingCharacterState = null;
+
+            if (next === 'study') {
+                playMotionByName('Study', 0);
+            } else {
+                playMotionByName('Normal', 0);
             }
         }
 
@@ -765,31 +796,33 @@
                 // 保证 start 至少可见一段时间，避免刚加载就被状态动作覆盖。
                 const startPlayed = await playMotionByName('Start', 0);
                 const startVisibleMs = startPlayed ? 3200 : 0;
-                setTimeout(() => {
-                    if (_pendingCharacterState) {
-                        const pending = _pendingCharacterState;
-                        _pendingCharacterState = null;
-                        setCharacterState(pending);
-                    } else {
-                        setCharacterState(_currentCharacterState);
-                    }
-                }, startVisibleMs);
+                if (startPlayed && startVisibleMs > 0) {
+                    _isTransientMotionPlaying = true;
+                    setTimeout(() => {
+                        _isTransientMotionPlaying = false;
+                        flushQueuedCharacterState();
+                    }, startVisibleMs);
+                } else {
+                    flushQueuedCharacterState();
+                }
 
                 updateStatus('✅ Live2D ready! Model is visible on screen.');
 
                 // Tap interaction
                 model.on('pointertap', () => {
-                    if (!_canPlaySmileOnTap) {
-                        return;
-                    }
-                    _canPlaySmileOnTap = false;
-                    updateStatus('Model clicked!');
-                    playMotionByName('Smile', 0);
-                    setTimeout(() => {
-                        setCharacterState(_currentCharacterState);
-                        _canPlaySmileOnTap = true;
-                    }, SMILE_MOTION_DURATION_MS);
+                    triggerSmileMotion();
                 });
+
+                // Fallback: some runtime states may miss model pointer events, keep canvas click as backup.
+                try {
+                    if (app && app.view) {
+                        app.view.addEventListener('click', () => {
+                            triggerSmileMotion();
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[Live2D] failed to bind canvas click fallback', e);
+                }
 
             } catch (error) {
                 updateStatus(`❌ Error: ${error.message}`);
@@ -868,12 +901,14 @@
             }
 
             _currentCharacterState = next;
-
-            if (next === 'study') {
-                playMotionByName('Study', 0);
-            } else {
-                playMotionByName('Normal', 0);
+            if (_isTransientMotionPlaying) {
+                _pendingCharacterState = next;
+                updateStatus(`[State] queued -> ${next}`);
+                return;
             }
+
+            _pendingCharacterState = null;
+            flushQueuedCharacterState();
         }
 
         window.setCharacterState = setCharacterState;

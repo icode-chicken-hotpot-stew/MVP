@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
-const double kCharacterHorizontalOffset = 20.0;
-const double kCharacterVerticalOffset = 350.0;
+const double kCharacterHorizontalOffset = 0.0;
+const double kCharacterVerticalOffset = 360.0;
 
 /// Live2D 角色显示组件
 /// 负责：
@@ -115,25 +115,6 @@ class _CharacterViewState extends State<CharacterView> {
       debugPrint('[CharacterView] synced viewport offset -> x=$x, y=$y');
     } catch (e) {
       debugPrint('[CharacterView] failed to sync viewport offset: $e');
-    }
-  }
-
-  /// 播放指定的表情动作（如"Smile"）
-  Future<bool> playMotion(String motionName) async {
-    if (!_pageReady) {
-      debugPrint('[CharacterView] playMotion failed: page not ready');
-      return false;
-    }
-    try {
-      final nameJson = jsonEncode(motionName);
-      await _controller.runJavaScript(
-        'if (window.playMotionByName) { window.playMotionByName($nameJson, 0); }',
-      );
-      debugPrint('[CharacterView] playMotion: $motionName');
-      return true;
-    } catch (e) {
-      debugPrint('[CharacterView] failed to play motion: $e');
-      return false;
     }
   }
 

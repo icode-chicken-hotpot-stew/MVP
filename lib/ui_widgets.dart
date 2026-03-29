@@ -19,6 +19,8 @@ class _UIWidgetsState extends State<UIWidgets> {
   double _fakeProgress = 0.0;
   late final VoidCallback _activeListener;
 
+  bool get _isTimerRunning => widget.controller.isActive.value;
+
   // 【V2复古风新增】控制各个磁贴展开状态的变量
   bool _isTomatoExpanded = false;
   bool _isStatsExpanded = false;
@@ -47,6 +49,9 @@ class _UIWidgetsState extends State<UIWidgets> {
     // 【MVP原有逻辑/注释】监听 isActive 变化时再 start/stop
     _activeListener = () {
       final bool active = widget.controller.isActive.value;
+      if (active && _isPomodoroConfigOpen) {
+        _closePomodoroConfig();
+      }
       if (active) {
         _startFakeProgress();
       } else {
@@ -91,6 +96,10 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 
   void _openPomodoroConfig() {
+    if (_isTimerRunning) {
+      return;
+    }
+
     setState(() {
       _isPomodoroConfigOpen = true;
       _focusMinutesController.text = (widget.controller.focusDurationSeconds.value ~/ 60).toString();
@@ -124,6 +133,11 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 
   void _savePomodoroConfig() {
+    if (_isTimerRunning) {
+      _closePomodoroConfig();
+      return;
+    }
+
     final focusValue = int.tryParse(_focusMinutesController.text);
     final restValue = int.tryParse(_restMinutesController.text);
     final cycleValue = int.tryParse(_cycleCountController.text);
@@ -393,11 +407,15 @@ class _UIWidgetsState extends State<UIWidgets> {
                         ),
                         
                         // 【本次修改】播放按钮放中间
-                        IconButton(
-                          icon: Icon(widget.controller.isActive.value ? Icons.pause : Icons.play_arrow, size: 28),
-                          // 【适配便签】图标颜色改为深棕色
-                          color: const Color(0xFF5D4037),
-                          onPressed: () => widget.controller.toggleTimer(),
+                        ValueListenableBuilder<bool>(
+                          valueListenable: widget.controller.isActive,
+                          builder: (context, isActive, _) {
+                            return IconButton(
+                              icon: Icon(isActive ? Icons.pause : Icons.play_arrow, size: 28),
+                              color: const Color(0xFF5D4037),
+                              onPressed: () => widget.controller.toggleTimer(),
+                            );
+                          },
                         ),
                         
                         // 【本次修改】自定义铅笔按钮放右边 (临时占位)
@@ -421,7 +439,9 @@ class _UIWidgetsState extends State<UIWidgets> {
                           icon: const Icon(Icons.edit), // 临时铅笔占位
                           // 【适配便签】图标颜色改为深棕色
                           color: const Color(0xFF5D4037),
-                          onPressed: _openPomodoroConfig,
+                          onPressed: _isTimerRunning
+                              ? null
+                              : _openPomodoroConfig,
                         ),
                       ],
                     ),
@@ -481,33 +501,55 @@ class _UIWidgetsState extends State<UIWidgets> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('专注/休息/循环(次)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5D4037), fontFamily: 'ZCOOLKuaiLe-Regular')),
-                        const SizedBox(height: 4),
-                        Row(
+                        Stack(
                           children: [
-                            Expanded(child: TextField(controller: _focusMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '专注(分)', floatingLabelBehavior: FloatingLabelBehavior.always, border: OutlineInputBorder()))),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Expanded(child: TextField(controller: _restMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '休息(分)', floatingLabelBehavior: FloatingLabelBehavior.always, border: OutlineInputBorder()))),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            // 【核心修复】加入 always 标签行为，防止文字过长遮挡点击区域
-                            Expanded(child: TextField(controller: _cycleCountController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '循环(次)', floatingLabelBehavior: FloatingLabelBehavior.always, border: OutlineInputBorder()))),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          // 【核心修复】改成 SpaceBetween 保持取消保存左右对称
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            TextButton(onPressed: _closePomodoroConfig, child: const Text('取消', style: TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'ZCOOLKuaiLe-Regular'))),
-                            TextButton(onPressed: _savePomodoroConfig, child: const Text('保存', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF5D4037), fontFamily: 'ZCOOLKuaiLe-Regular'))),
+                            AnimatedOpacity(
+                              duration: const Duration(milliseconds: 200),
+                              opacity: _isTimerRunning ? 0.45 : 1.0,
+                              child: IgnorePointer(
+                                ignoring: _isTimerRunning,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('专注/休息/循环(次)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5D4037), fontFamily: 'ZCOOLKuaiLe-Regular')),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Expanded(child: TextField(controller: _focusMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '专注(分)', floatingLabelBehavior: FloatingLabelBehavior.always, border: OutlineInputBorder()))),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Expanded(child: TextField(controller: _restMinutesController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '休息(分)', floatingLabelBehavior: FloatingLabelBehavior.always, border: OutlineInputBorder()))),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Expanded(child: TextField(controller: _cycleCountController, keyboardType: TextInputType.number, decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8), labelText: '循环(次)', floatingLabelBehavior: FloatingLabelBehavior.always, border: OutlineInputBorder()))),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        TextButton(onPressed: _closePomodoroConfig, child: const Text('取消', style: TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'ZCOOLKuaiLe-Regular'))),
+                                        TextButton(onPressed: _savePomodoroConfig, child: const Text('保存', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF5D4037), fontFamily: 'ZCOOLKuaiLe-Regular'))),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (_isTimerRunning)
+                              const Positioned.fill(
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Color.fromRGBO(255, 255, 255, 0.12),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ],

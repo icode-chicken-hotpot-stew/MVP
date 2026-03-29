@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:mvp_app/app_controller.dart';
 import 'package:mvp_app/ui_widgets.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 
@@ -27,11 +28,13 @@ class MainStage extends StatefulWidget {
 
 class _MainStageState extends State<MainStage> {
   late final AppController controller;
+  late final Future<void> _initialization;
 
   @override
   void initState() {
     super.initState();
     controller = AppController();
+    _initialization = controller.initialize();
   }
 
   @override
@@ -42,16 +45,21 @@ class _MainStageState extends State<MainStage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage('assets/background.webp'),
-            fit: BoxFit.cover,
+    return FutureBuilder<void>(
+      future: _initialization,
+      builder: (context, snapshot) {
+        return Scaffold(
+          body: Container(
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/background.webp'),
+                fit: BoxFit.cover,
+              ),
+            ),
+            child: UIWidgets(controller: controller),
           ),
-        ),
-        child: UIWidgets(controller: controller),
-      ),
+        );
+      },
     );
   }
 }

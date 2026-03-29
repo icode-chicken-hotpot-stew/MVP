@@ -149,7 +149,6 @@ class AppController {
   Timer? _ticker;
   DateTime? _phaseStartedAt;
   int _phaseDurationSeconds = kDefaultPomodoroSeconds;
-  Future<bool>? _persisting;
 
   /// 格式化当前日期
   static String _formatCurrentDate() {
@@ -196,6 +195,13 @@ class AppController {
 
     if (!_sameSnapshot(recovered, snapshot)) {
       await _persistSnapshot(recovered);
+    }
+  }
+
+  Future<void> synchronizeWithCurrentTime() async {
+    final _PomodoroSnapshot? snapshot = _syncRunningState(DateTime.now());
+    if (snapshot != null) {
+      await _persistSnapshot(snapshot);
     }
   }
 
@@ -259,6 +265,9 @@ class AppController {
     if (!_isValidDuration(seconds)) {
       return;
     }
+    if (focusDurationSeconds.value == seconds) {
+      return;
+    }
 
     focusDurationSeconds.value = seconds;
 
@@ -274,6 +283,9 @@ class AppController {
     if (!_isValidDuration(seconds)) {
       return;
     }
+    if (restDurationSeconds.value == seconds) {
+      return;
+    }
 
     restDurationSeconds.value = seconds;
     unawaited(_persistSnapshot(_currentSnapshot()));
@@ -284,6 +296,9 @@ class AppController {
     if (count != sanitized) {
       return;
     }
+    if (cycleCount.value == sanitized) {
+      return;
+    }
 
     cycleCount.value = sanitized;
     unawaited(_persistSnapshot(_currentSnapshot()));
@@ -291,7 +306,7 @@ class AppController {
 
   /// 从本地存储读取历史时长数据（由组员 C 填充逻辑）
   void fetchHistoryData() {
-    // TODO: implement history fetch logic
+    // 历史统计契约不在当前批次范围内，这里保留给 UI 的兼容入口。
   }
 
   int get currentPhaseDurationSeconds => _currentPhaseTotalSeconds;
@@ -320,24 +335,10 @@ class AppController {
   }
 
   void _tick() {
-    if (phaseStatus.value != PomodoroPhaseStatus.running || _phaseStartedAt == null) {
-      return;
+    final _PomodoroSnapshot? snapshot = _syncRunningState(DateTime.now());
+    if (snapshot != null) {
+      unawaited(_persistSnapshot(snapshot));
     }
-
-    final DateTime now = DateTime.now();
-    final int updatedRemaining = _remainingFromStart(
-      startedAt: _phaseStartedAt!,
-      phaseDurationSeconds: _phaseDurationSeconds,
-      now: now,
-    );
-
-    if (updatedRemaining > 0) {
-      remainingSeconds.value = updatedRemaining;
-      currentDate.value = _formatCurrentDate();
-      return;
-    }
-
-    _handlePhaseCompletion(now);
   }
 
   void _syncRemainingSeconds(DateTime now) {
@@ -351,14 +352,47 @@ class AppController {
     );
   }
 
-  void _handlePhaseCompletion(DateTime now) {
+  _PomodoroSnapshot? _syncRunningState(DateTime now) {
+    currentDate.value = _formatCurrentDate();
+
+    if (phaseStatus.value != PomodoroPhaseStatus.running || _phaseStartedAt == null) {
+      return null;
+    }
+
+    final int elapsedSeconds = now.difference(_phaseStartedAt!).inSeconds;
+    if (elapsedSeconds < _phaseDurationSeconds) {
+      final int updatedRemaining = _remainingFromStart(
+        startedAt: _phaseStartedAt!,
+        phaseDurationSeconds: _phaseDurationSeconds,
+        now: now,
+      );
+      if (remainingSeconds.value != updatedRemaining) {
+        remainingSeconds.value = updatedRemaining;
+      }
+      return null;
+    }
+
     final _PomodoroSnapshot snapshot = _advanceSnapshotAfterElapsed(
-      snapshot: _currentSnapshot(),
-      elapsedSeconds: _currentPhaseTotalSeconds,
+      snapshot: _snapshotForTransition(),
+      elapsedSeconds: elapsedSeconds,
       now: now,
     );
     _applySnapshot(snapshot, startTickerIfRunning: true);
-    unawaited(_persistSnapshot(snapshot));
+    return snapshot;
+  }
+
+  _PomodoroSnapshot _snapshotForTransition() {
+    return _PomodoroSnapshot(
+      pomodoroState: pomodoroState.value,
+      phaseStatus: phaseStatus.value,
+      startedAt: _phaseStartedAt,
+      phaseDurationSeconds: _currentPhaseTotalSeconds,
+      remainingSeconds: remainingSeconds.value,
+      focusDurationSeconds: focusDurationSeconds.value,
+      restDurationSeconds: restDurationSeconds.value,
+      cycleCount: cycleCount.value,
+      completedFocusCycles: completedFocusCycles.value,
+    );
   }
 
   _PomodoroSnapshot _recoverSnapshot({
@@ -382,7 +416,18 @@ class AppController {
             ),
       remainingSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
-          : _sanitizeDurationOrDefault(snapshot.remainingSeconds, focusSeconds),
+          : _sanitizeRemainingSeconds(
+              seconds: snapshot.remainingSeconds,
+              phaseDurationSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
+                  ? focusSeconds
+                  : _sanitizeDurationOrDefault(
+                      snapshot.phaseDurationSeconds,
+                      snapshot.pomodoroState == PomodoroState.studying
+                          ? focusSeconds
+                          : restSeconds,
+                    ),
+              fallback: snapshot.pomodoroState == PomodoroState.studying ? focusSeconds : restSeconds,
+            ),
       focusDurationSeconds: focusSeconds,
       restDurationSeconds: restSeconds,
       cycleCount: cycles,
@@ -541,8 +586,7 @@ class AppController {
 
   Future<void> _persistSnapshot(_PomodoroSnapshot snapshot) async {
     final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
-    _persisting = prefs.setString(_kPomodoroSnapshotKey, jsonEncode(snapshot.toJson()));
-    await _persisting;
+    await prefs.setString(_kPomodoroSnapshotKey, jsonEncode(snapshot.toJson()));
   }
 
   bool _sameSnapshot(_PomodoroSnapshot a, _PomodoroSnapshot b) {
@@ -577,6 +621,20 @@ class AppController {
 
   int _sanitizeDurationOrDefault(int seconds, int fallback) {
     return _isValidDuration(seconds) ? seconds : fallback;
+  }
+
+  int _sanitizeRemainingSeconds({
+    required int seconds,
+    required int phaseDurationSeconds,
+    required int fallback,
+  }) {
+    if (!_isValidDuration(seconds)) {
+      return fallback;
+    }
+    if (seconds > phaseDurationSeconds) {
+      return phaseDurationSeconds;
+    }
+    return seconds;
   }
 
   int? _sanitizeCycleCount(int? count) {

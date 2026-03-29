@@ -15,11 +15,8 @@ class UIWidgets extends StatefulWidget {
 }
 
 class _UIWidgetsState extends State<UIWidgets> {
-  Timer? _fakeTimer;
-  double _fakeProgress = 0.0;
-  late final VoidCallback _activeListener;
-
-  bool get _isTimerRunning => widget.controller.isActive.value;
+  PomodoroPhaseStatus get _phaseStatus => widget.controller.phaseStatus.value;
+  bool get _isTimerRunning => _phaseStatus == PomodoroPhaseStatus.running;
 
   // 【V2复古风新增】控制各个磁贴展开状态的变量
   bool _isTomatoExpanded = false;
@@ -44,55 +41,11 @@ class _UIWidgetsState extends State<UIWidgets> {
   final TextEditingController _cycleCountController = TextEditingController();
 
   @override
-  void initState() {
-    super.initState();
-    // 【MVP原有逻辑/注释】监听 isActive 变化时再 start/stop
-    _activeListener = () {
-      final bool active = widget.controller.isActive.value;
-      if (active && _isPomodoroConfigOpen) {
-        _closePomodoroConfig();
-      }
-      if (active) {
-        _startFakeProgress();
-      } else {
-        _stopFakeProgress();
-      }
-    };
-    widget.controller.isActive.addListener(_activeListener);
-    _activeListener();
-  }
-
-  @override
   void dispose() {
-    widget.controller.isActive.removeListener(_activeListener);
-    _fakeTimer?.cancel();
     _focusMinutesController.dispose();
     _restMinutesController.dispose();
     _cycleCountController.dispose();
     super.dispose();
-  }
-
-  void _startFakeProgress() {
-    if (_fakeTimer != null && _fakeTimer!.isActive) return;
-    _fakeTimer?.cancel();
-    _fakeTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (!mounted) return;
-      setState(() {
-        _fakeProgress += 0.002;
-        if (_fakeProgress >= 1.0) _fakeProgress = 0.0;
-      });
-    });
-  }
-
-  void _stopFakeProgress() {
-    _fakeTimer?.cancel();
-    _fakeTimer = null;
-  }
-
-  void _resetFakeProgress() {
-    setState(() {
-      _fakeProgress = 0.0;
-    });
   }
 
   void _openPomodoroConfig() {
@@ -112,6 +65,48 @@ class _UIWidgetsState extends State<UIWidgets> {
     setState(() {
       _isPomodoroConfigOpen = false;
     });
+  }
+
+  void _handlePrimaryPomodoroAction() {
+    if (_isTimerRunning) {
+      widget.controller.pauseTimer();
+      return;
+    }
+
+    if (_isPomodoroConfigOpen) {
+      _closePomodoroConfig();
+    }
+    widget.controller.startTimer();
+  }
+
+  double _buildPomodoroProgress() {
+    final int total = widget.controller.currentPhaseDurationSeconds;
+    if (total <= 0 || _phaseStatus == PomodoroPhaseStatus.ready) {
+      return 0;
+    }
+
+    final int remaining = widget.controller.remainingSeconds.value.clamp(0, total) as int;
+    final double progress = (total - remaining) / total;
+    return progress.clamp(0.0, 1.0).toDouble();
+  }
+
+  String _formatTime(int seconds) {
+    final int safeSeconds = seconds < 0 ? 0 : seconds;
+    final String minutesText = (safeSeconds ~/ 60).toString().padLeft(2, '0');
+    final String secondsText = (safeSeconds % 60).toString().padLeft(2, '0');
+    return '$minutesText:$secondsText';
+  }
+
+  String _buildPhaseLabel() {
+    if (_phaseStatus == PomodoroPhaseStatus.ready) {
+      return '待开始';
+    }
+
+    if (widget.controller.pomodoroState.value == PomodoroState.studying) {
+      return _phaseStatus == PomodoroPhaseStatus.paused ? '专注暂停' : '专注中';
+    }
+
+    return _phaseStatus == PomodoroPhaseStatus.paused ? '休息暂停' : '休息中';
   }
 
   // 【新增】缩放动画方法
@@ -168,11 +163,10 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 
   Widget _buildCharacterStage(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: widget.controller.isActive,
-      builder: (context, active, _) {
-        debugPrint('[DEBUG][CharacterStage] active=$active');
-        return CharacterView(isActive: active);
+    return ValueListenableBuilder<PomodoroState>(
+      valueListenable: widget.controller.pomodoroState,
+      builder: (context, state, _) {
+        return CharacterView(isActive: state == PomodoroState.studying);
       },
     );
   }
@@ -368,29 +362,61 @@ class _UIWidgetsState extends State<UIWidgets> {
                     Stack(
                       alignment: Alignment.center,
                       children: [
-                        SizedBox(
-                          width: 70, height: 70,
-                          child: CircularProgressIndicator(
-                            value: _fakeProgress,
-                            // 【适配便签】底色变浅了，这里的颜色换回复古红和深灰
-                            color: const Color.fromARGB(255, 204, 196, 195), // 白色进度
-                            backgroundColor: const Color.fromARGB(255, 179, 22, 22), // 红色初始轨道
-                            strokeWidth: 6,
-                          ),
-                        ),
-                        // 内部时间
-                        // 【核心修复】重新明确参数，解决 valueListenable 报错
-                        ValueListenableBuilder<int>(
-                          valueListenable: widget.controller.remainingSeconds,
-                          builder: (BuildContext context, int seconds, Widget? child) {
-                            final time = "${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}";
-                            // 【适配便签】文字颜色改为深棕色，在白底便签上才清晰
-                            return Text(time, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF5D4037), fontFamily: 'ZCOOLKuaiLe-Regular'));
+                        ListenableBuilder(
+                          listenable: Listenable.merge([
+                            widget.controller.remainingSeconds,
+                            widget.controller.phaseStatus,
+                            widget.controller.pomodoroState,
+                            widget.controller.focusDurationSeconds,
+                            widget.controller.restDurationSeconds,
+                          ]),
+                          builder: (context, _) {
+                            return Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 70, height: 70,
+                                  child: CircularProgressIndicator(
+                                    value: _buildPomodoroProgress(),
+                                    color: const Color.fromARGB(255, 204, 196, 195),
+                                    backgroundColor: const Color.fromARGB(255, 179, 22, 22),
+                                    strokeWidth: 6,
+                                  ),
+                                ),
+                                Text(
+                                  _formatTime(widget.controller.remainingSeconds.value),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF5D4037),
+                                    fontFamily: 'ZCOOLKuaiLe-Regular',
+                                  ),
+                                ),
+                              ],
+                            );
                           },
                         ),
                       ],
                     ),
                     const SizedBox(height: 5),
+                    ListenableBuilder(
+                      listenable: Listenable.merge([
+                        widget.controller.phaseStatus,
+                        widget.controller.pomodoroState,
+                      ]),
+                      builder: (context, _) {
+                        return Text(
+                          _buildPhaseLabel(),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF5D4037),
+                            fontFamily: 'ZCOOLKuaiLe-Regular',
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 2),
                     // 【本次修改】重新排列按钮：重置放左边，播放放中间，自定义按钮放右边 (临时占位)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -400,20 +426,22 @@ class _UIWidgetsState extends State<UIWidgets> {
                           icon: const Icon(Icons.refresh), 
                           // 【适配便签】图标颜色改为深棕色
                           color: const Color(0xFF5D4037),
-                          onPressed: () {
-                            widget.controller.resetTimer();
-                            _resetFakeProgress();
-                          },
+                          onPressed: () => widget.controller.resetTimer(),
                         ),
                         
                         // 【本次修改】播放按钮放中间
-                        ValueListenableBuilder<bool>(
-                          valueListenable: widget.controller.isActive,
-                          builder: (context, isActive, _) {
+                        ValueListenableBuilder<PomodoroPhaseStatus>(
+                          valueListenable: widget.controller.phaseStatus,
+                          builder: (context, phaseStatus, _) {
                             return IconButton(
-                              icon: Icon(isActive ? Icons.pause : Icons.play_arrow, size: 28),
+                              icon: Icon(
+                                phaseStatus == PomodoroPhaseStatus.running
+                                    ? Icons.pause
+                                    : Icons.play_arrow,
+                                size: 28,
+                              ),
                               color: const Color(0xFF5D4037),
-                              onPressed: () => widget.controller.toggleTimer(),
+                              onPressed: _handlePrimaryPomodoroAction,
                             );
                           },
                         ),

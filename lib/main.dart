@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mvp_app/app_controller.dart';
 import 'package:mvp_app/ui_widgets.dart';
@@ -26,19 +28,39 @@ class MainStage extends StatefulWidget {
   State<MainStage> createState() => _MainStageState();
 }
 
-class _MainStageState extends State<MainStage> {
+class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
   late final AppController controller;
   late final Future<void> _initialization;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     controller = AppController();
     _initialization = controller.initialize();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+
+    unawaited(_resumePomodoroTimeline());
+  }
+
+  Future<void> _resumePomodoroTimeline() async {
+    await _initialization;
+    if (!mounted) {
+      return;
+    }
+
+    await controller.synchronizeWithCurrentTime();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     controller.dispose();
     super.dispose();
   }
@@ -48,6 +70,13 @@ class _MainStageState extends State<MainStage> {
     return FutureBuilder<void>(
       future: _initialization,
       builder: (context, snapshot) {
+        final Widget content;
+        if (snapshot.connectionState != ConnectionState.done) {
+          content = const Center(child: CircularProgressIndicator());
+        } else {
+          content = UIWidgets(controller: controller);
+        }
+
         return Scaffold(
           body: Container(
             decoration: const BoxDecoration(
@@ -56,7 +85,7 @@ class _MainStageState extends State<MainStage> {
                 fit: BoxFit.cover,
               ),
             ),
-            child: UIWidgets(controller: controller),
+            child: content,
           ),
         );
       },

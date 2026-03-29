@@ -410,6 +410,10 @@
     <script>
         let app = null;
         let model = null;
+        let _motionPlaylist = [];
+        let _motionLoopTimer = null;
+        let _motionLoopIndex = 0;
+        const MOTION_PRIORITY_FORCE = 100;
 
         function updateStatus(message) {
             console.log('[Live2D]', message);
@@ -589,16 +593,39 @@
 
                     // Handle motions
                     if (modelJson?.FileReferences?.Motions) {
-                        Object.entries(modelJson.FileReferences.Motions).forEach(([group, motions]) => {
-                            if (Array.isArray(motions)) {
-                                motions.forEach((motion, idx) => {
-                                    if (motion?.File && !motion.File.startsWith('http')) {
-                                        motions[idx].File = modelBaseUrl + motion.File;
-                                    }
+                        for (const [group, motions] of Object.entries(modelJson.FileReferences.Motions)) {
+                            if (!Array.isArray(motions)) {
+                                continue;
+                            }
+
+                            for (let idx = 0; idx < motions.length; idx++) {
+                                const motion = motions[idx];
+                                if (!motion?.File) {
+                                    continue;
+                                }
+
+                                const original = motion.File;
+                                const absoluteUrl = original.startsWith('http') ? original : (modelBaseUrl + original);
+
+                                // Android WebView 对 blob: motion URL 存在拦截问题，
+                                // 这里保持为 appassets 绝对路径，并做一次预读验证可达性。
+                                try {
+                                    await xhrFetch(absoluteUrl);
+                                } catch (e) {
+                                    console.warn('[Live2D][MotionPreload] motion precheck failed:', absoluteUrl, e);
+                                }
+                                motions[idx].File = absoluteUrl;
+
+                                _motionPlaylist.push({
+                                    group,
+                                    index: idx,
+                                    file: original,
                                 });
                             }
-                        });
+                        }
                     }
+
+                    console.log('[Live2D][Test] Motion playlist:', _motionPlaylist);
 
                     console.log('[Live2D] Textures and paths injected');
 
@@ -809,13 +836,16 @@
 
                 updateStatus('✅ Live2D ready! Model is visible on screen.');
 
+                // 自动测试：依次播放 hiyori/motions 下的每个动作文件
+                startAutoMotionTest();
+
                 // Tap interaction
                 model.on('pointertap', () => {
                     updateStatus('Model clicked!');
                     if (model.motion) {
-                        model.motion('TapBody');
+                        model.motion('TapBody', 0, MOTION_PRIORITY_FORCE);
                     } else if (model.internalModel?.motionManager) {
-                        model.internalModel.motionManager.startMotion('TapBody', 0, 3);
+                        model.internalModel.motionManager.startMotion('TapBody', 0, MOTION_PRIORITY_FORCE);
                     }
                 });
 
@@ -829,13 +859,117 @@
         function playMotion(motionName) {
             if (!model) return;
             if (model.motion) {
-                model.motion(motionName);
+                model.motion(motionName, 0, MOTION_PRIORITY_FORCE);
                 updateStatus(`Play motion: ${motionName}`);
             } else if (model.internalModel?.motionManager) {
-                model.internalModel.motionManager.startMotion(motionName, 0, 3);
+                model.internalModel.motionManager.startMotion(motionName, 0, MOTION_PRIORITY_FORCE);
                 updateStatus(`Play motion: ${motionName}`);
             } else {
                 updateStatus('Motion control not supported');
+            }
+        }
+
+        async function playMotionByEntry(entry) {
+            if (!model || !entry) return;
+
+            const group = entry.group;
+            const index = Number(entry.index) || 0;
+
+            // 尽量停止当前动作，避免被 Idle 持续覆盖
+            try {
+                if (model.internalModel?.motionManager?.stopAllMotions) {
+                    model.internalModel.motionManager.stopAllMotions();
+                }
+            } catch (_) { }
+
+            let played = false;
+
+            // 1) 低层 API：按 group + index 精准播放
+            try {
+                if (model.internalModel?.motionManager?.startMotion) {
+                    const result = model.internalModel.motionManager.startMotion(
+                        group,
+                        index,
+                        MOTION_PRIORITY_FORCE
+                    );
+                    const resolved = result instanceof Promise ? await result : result;
+                    // 某些版本返回 false 表示未成功启动
+                    played = resolved !== false;
+                    console.log('[Live2D][AutoTest] startMotion result:', resolved);
+                }
+            } catch (e) {
+                console.warn('[Live2D][AutoTest] startMotion failed:', e);
+            }
+
+            // 2) 高层 API：尽量传 index，失败则退化到 group
+            if (!played && model.motion) {
+                try {
+                    const highResult = model.motion(group, index, MOTION_PRIORITY_FORCE);
+                    const resolvedHigh = highResult instanceof Promise ? await highResult : highResult;
+                    console.log('[Live2D][AutoTest] model.motion(group,index,priority) result:', resolvedHigh);
+                    played = resolvedHigh !== false;
+                } catch (_) {
+                    try {
+                        const fallbackResult = model.motion(group);
+                        const resolvedFallback = fallbackResult instanceof Promise ? await fallbackResult : fallbackResult;
+                        console.log('[Live2D][AutoTest] model.motion(group) result:', resolvedFallback);
+                        played = resolvedFallback !== false;
+                    } catch (e) {
+                        console.warn('[Live2D][AutoTest] model.motion failed:', e);
+                    }
+                }
+            }
+
+            const fileName = String(entry.file || '').split('/').pop() || `${group}[${index}]`;
+            updateStatus(`[AutoTest] ${group}[${index}] -> ${fileName} (${played ? 'ok' : 'fail'})`);
+            console.log('[Live2D][AutoTest] Playing:', entry);
+        }
+
+        function startAutoMotionTest() {
+            if (!model) return;
+            if (!_motionPlaylist.length) {
+                updateStatus('[AutoTest] No motions found');
+                return;
+            }
+
+            stopAutoMotionTest();
+            _motionLoopIndex = 0;
+            const tapBodyEntries = _motionPlaylist.filter(m => m.group === 'TapBody');
+            const idleEntries = _motionPlaylist.filter(m => m.group === 'Idle');
+
+            // 为了“看得见切换”，每个 Idle 后插入一次 TapBody
+            const visibleSequence = [];
+            if (tapBodyEntries.length > 0) {
+                for (const idle of idleEntries) {
+                    visibleSequence.push(idle);
+                    visibleSequence.push(tapBodyEntries[0]);
+                }
+            } else {
+                visibleSequence.push(..._motionPlaylist);
+            }
+
+            if (!visibleSequence.length) {
+                updateStatus('[AutoTest] No playable motion sequence');
+                return;
+            }
+
+            updateStatus(`[AutoTest] Start visible loop ${visibleSequence.length} steps`);
+
+            // 先立即播放第一个动作（优先可见切换）
+            playMotionByEntry(visibleSequence[_motionLoopIndex]);
+
+            // 固定间隔轮播
+            _motionLoopTimer = setInterval(() => {
+                if (!model || !visibleSequence.length) return;
+                _motionLoopIndex = (_motionLoopIndex + 1) % visibleSequence.length;
+                playMotionByEntry(visibleSequence[_motionLoopIndex]);
+            }, 2200);
+        }
+
+        function stopAutoMotionTest() {
+            if (_motionLoopTimer) {
+                clearInterval(_motionLoopTimer);
+                _motionLoopTimer = null;
             }
         }
 
@@ -880,6 +1014,10 @@
             if (app && model && typeof window._applyVerticalAlignment === 'function') {
                 try { window._applyVerticalAlignment(window.innerWidth, window.innerHeight); } catch (e) { console.warn('resize alignment failed', e); }
             }
+        });
+
+        window.addEventListener('beforeunload', () => {
+            stopAutoMotionTest();
         });
     </script>
 </body>

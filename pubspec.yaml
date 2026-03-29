@@ -9,8 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  webview_flutter: ^4.11.0
-  webview_flutter_android: ^4.10.11
+  webview_flutter: 4.11.0
+  webview_flutter_android: 4.10.11
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:
@@ -21,6 +22,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/background.webp
+    - assets/images/
     - assets/live2d/hiyori_viewer.html
     - assets/live2d/libs/
     - assets/live2d/hiyori/

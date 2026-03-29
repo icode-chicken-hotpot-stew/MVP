@@ -296,7 +296,7 @@
                                 if (assetPath.endsWith('.model3.json')) {
                                     body = injectTexturesIntoModelJson(body);
                                 }
-                                const isJsonMotion = /\.(model3.json|motion3.json|pose3.json|physics3.json|userdata3.json)$/i.test(assetPath);
+                                const isJsonMotion = /\.json$/i.test(assetPath);
                                 try {
                                     complete(true, isJsonMotion ? JSON.parse(body) : body, 'application/json');
                                 } catch (e) {
@@ -409,11 +409,48 @@
 
     <script>
         let app = null;
+        let modelLayer = null;
         let model = null;
-        let _motionPlaylist = [];
-        let _motionLoopTimer = null;
-        let _motionLoopIndex = 0;
         const MOTION_PRIORITY_FORCE = 100;
+        // Keep HTML Y anchor neutral; let Flutter verticalOffset drive final Y movement.
+        const LAYER_BASE_Y_RATIO = 0.5;
+        const LAYER_OFFSET_Y_PX = 0;
+        const LAYER_OFFSET_X_PX = 90;
+        const ENABLE_TOP_CLAMP = false;
+        const SAFE_TOP_PADDING_PX = 16;
+        const MAX_TOP_CLAMP_PX = 48;
+        let _externalOffsetX = 0;
+        let _externalOffsetY = 0;
+        let _currentCharacterState = 'normal';
+        let _pendingCharacterState = null;
+        let _motionGroupNameMap = {};
+        let _canPlaySmileOnTap = true;
+        const SMILE_MOTION_DURATION_MS = 1700;
+
+        function resolveMotionGroupName(group) {
+            const raw = String(group || '');
+            const key = raw.toLowerCase();
+            return _motionGroupNameMap[key] || raw;
+        }
+
+        function keepModelInViewport(bottomMargin = 8) {
+            // Disabled to avoid motion-time vertical snapping/jitter.
+            return;
+        }
+
+        function setViewportOffset(x = 0, y = 0) {
+            _externalOffsetX = Number(x) || 0;
+            _externalOffsetY = Number(y) || 0;
+            if (typeof window._applyVerticalAlignment === 'function') {
+                try {
+                    window._applyVerticalAlignment(window.innerWidth, window.innerHeight);
+                } catch (e) {
+                    console.warn('[Live2D] setViewportOffset apply failed', e);
+                }
+            }
+        }
+
+        window.setViewportOffset = setViewportOffset;
 
         function updateStatus(message) {
             console.log('[Live2D]', message);
@@ -593,6 +630,12 @@
 
                     // Handle motions
                     if (modelJson?.FileReferences?.Motions) {
+                        // Build a case-insensitive group name map to avoid mismatch between code and model json.
+                        _motionGroupNameMap = {};
+                        Object.keys(modelJson.FileReferences.Motions).forEach((name) => {
+                            _motionGroupNameMap[String(name).toLowerCase()] = name;
+                        });
+
                         for (const [group, motions] of Object.entries(modelJson.FileReferences.Motions)) {
                             if (!Array.isArray(motions)) {
                                 continue;
@@ -616,16 +659,9 @@
                                 }
                                 motions[idx].File = absoluteUrl;
 
-                                _motionPlaylist.push({
-                                    group,
-                                    index: idx,
-                                    file: original,
-                                });
                             }
                         }
                     }
-
-                    console.log('[Live2D][Test] Motion playlist:', _motionPlaylist);
 
                     console.log('[Live2D] Textures and paths injected');
 
@@ -650,15 +686,20 @@
                     throw error;
                 }
 
-                // 居中、缩放与垂直对齐逻辑封装并在 resize 时重用
+                // 使用外层容器承接全局平移，避免与模型内部动画位移互相干扰。
+                modelLayer = new PIXI.Container();
+                app.stage.addChild(modelLayer);
+                modelLayer.addChild(model);
+
+                // 只做缩放和水平居中；不干预纵向位移，交由动画自身控制
                 try {
                     function applyVerticalAlignment(w, h) {
                         try {
                             const width = Number(w || window.innerWidth);
                             const height = Number(h || window.innerHeight);
 
-                            // 基本缩放（调小以显示半身）
-                            model.scale.set(0.3);
+                            // 略微回调缩放，避免头部动画被遮盖
+                            model.scale.set(0.29);
 
                             // 计算并设置 pivot 为局部中心（使 position 成为可视中心）
                             try {
@@ -674,43 +715,30 @@
                                 console.warn('[Live2D] Failed to set pivot from local bounds', e);
                             }
 
-                            // 先基于局部高度计算偏移（更稳定）
-                            const localBounds2 = model.getLocalBounds();
-                            const localHeight = Number(localBounds2.height) || Number(model.height) || 0;
-                            const displayedHeight = localHeight * (model.scale?.y || model.scale || 1);
+                            // 模型本体保持原点，由外层容器统一做全局位移。
+                            model.position.x = 0;
+                            model.position.y = 0;
 
-                            // 向下移动的强度：调整以展示半身像
-                            const upwardRatio = 0.15;
-                            const offsetY = displayedHeight * upwardRatio;
-                            console.log('[Live2D] Centering model with upward offset:', { localHeight, displayedHeight, upwardRatio, offsetY });
+                            // 水平居中给外层容器
+                            if (modelLayer) {
+                                modelLayer.x = width / 2 + LAYER_OFFSET_X_PX + _externalOffsetX;
+                                modelLayer.y = Math.round(height * LAYER_BASE_Y_RATIO) + LAYER_OFFSET_Y_PX + _externalOffsetY;
 
-                            // 初始 position（相对于画布中心），先应用基于局部高度的偏移
-                            model.position.set(width / 2, height / 2 - offsetY);
-
-                            // 使用全局 bounds 做二次修正，确保模型顶部到达期望屏幕位置
-                            try {
-                                const globalBounds = model.getBounds();
-                                const desiredTop = Math.round(height * 0.35); // 把模型顶部移动到屏幕 55% 位置（进一步往下）
-                                const deltaY = desiredTop - (globalBounds.y || 0);
-                                console.log('[Live2D] Adjusting by global bounds:', { globalBounds, desiredTop, deltaY });
-                                // Apply primary adjustment
-                                model.position.y = (model.position.y || 0) + deltaY;
-                                // 如果仍然看起来偏低，应用额外的向上修正（基于模型显示高度）
-                                try {
-                                    const extraUp = Math.round(Math.max(50, (displayedHeight || 0) * 0.15));
-                                    console.log('[Live2D] Applying extra upward correction:', extraUp);
-                                    model.position.y = (model.position.y || 0) - extraUp;
-                                } catch (e) {
-                                    console.warn('[Live2D] extra upward correction failed', e);
+                                // Optional top clamp: disable to allow free upward movement.
+                                if (ENABLE_TOP_CLAMP) {
+                                    try {
+                                        const bounds = model.getBounds();
+                                        const topOverflow = SAFE_TOP_PADDING_PX - (Number(bounds?.y) || 0);
+                                        if (topOverflow > 0) {
+                                            // Soft clamp: avoid pinning Y completely so vertical offset still works.
+                                            modelLayer.y += Math.min(topOverflow, MAX_TOP_CLAMP_PX);
+                                        }
+                                    } catch (e) {
+                                        console.warn('[Live2D] top safe-area correction failed', e);
+                                    }
                                 }
-                            } catch (e) {
-                                console.warn('[Live2D] Global bounds adjustment failed', e);
                             }
 
-                            // 触发一次 debug 绘制更新
-                            setTimeout(() => {
-                                try { if (typeof drawDebugBounds === 'function') drawDebugBounds(); } catch(_){ }
-                            }, 60);
                         } catch (e) {
                             console.warn('[Live2D] applyVerticalAlignment failed', e);
                         }
@@ -718,8 +746,12 @@
 
                     // 执行一次对齐
                     applyVerticalAlignment(window.innerWidth, window.innerHeight);
+                    // WebView 初次进入时补做一次对齐。
+                    setTimeout(() => {
+                        applyVerticalAlignment(window.innerWidth, window.innerHeight);
+                    }, 200);
 
-                    // 在窗口 resize 时也应用相同的对齐逻辑（替代原先简单的居中）
+                    // 在窗口 resize 时仅做水平居中
                     window._applyVerticalAlignment = applyVerticalAlignment;
                 } catch (e) {
                     console.log('[Live2D] Error setting model properties:', e.message);
@@ -729,124 +761,34 @@
                 model.eventMode = 'static';
                 model.cursor = 'pointer';
 
-                app.stage.addChild(model);
-
-                // --- DEBUG HELPERS: draw model bounds and log textures ---
-                try {
-                    // Ensure stage sortable so overlays appear above model
-                    app.stage.sortableChildren = true;
-
-                    // Log internal texture info if available
-                    if (model.internalModel && model.internalModel.textures) {
-                        console.log('[Live2D] Model has', model.internalModel.textures.length, 'textures');
-                        model.internalModel.textures.forEach((tex, i) => {
-                            try {
-                                console.log(`[Live2D] Texture ${i}:`, tex && tex.width, 'x', tex && tex.height, 'valid:', tex && tex.valid);
-                            } catch (e) {
-                                console.log('[Live2D] Texture log error', e);
-                            }
-                        });
+                // 进入应用先播放 start 动画，再切到当前状态（normal/study）。
+                // 保证 start 至少可见一段时间，避免刚加载就被状态动作覆盖。
+                const startPlayed = await playMotionByName('Start', 0);
+                const startVisibleMs = startPlayed ? 3200 : 0;
+                setTimeout(() => {
+                    if (_pendingCharacterState) {
+                        const pending = _pendingCharacterState;
+                        _pendingCharacterState = null;
+                        setCharacterState(pending);
                     } else {
-                        console.log('[Live2D] No internal textures information available');
+                        setCharacterState(_currentCharacterState);
                     }
-
-                    // Attempt to get bounds and draw a visible rectangle around the model
-                    const drawDebugBounds = () => {
-                        try {
-                            const bounds = model.getBounds();
-                            // Print a full JSON representation for easier reading
-                            try {
-                                console.log('[Live2D] Model getBounds (json):', JSON.stringify(bounds));
-                            } catch (e) {
-                                console.log('[Live2D] Model getBounds (obj):', bounds);
-                            }
-
-                            // Also log more model metrics
-                            try {
-                                console.log('[Live2D] model.position:', model.position.x, model.position.y);
-                                console.log('[Live2D] model.width/height:', model.width, model.height);
-                                console.log('[Live2D] model.getLocalBounds():', model.getLocalBounds());
-                            } catch (e) {
-                                console.warn('[Live2D] model metric log failed', e);
-                            }
-
-                            // Remove previous debug if exists
-                            if (app.stage._debugBox) {
-                                try { app.stage.removeChild(app.stage._debugBox); app.stage._debugBox.destroy({ children: true }); } catch (_) { }
-                            }
-
-                            const g = new PIXI.Graphics();
-                            g.lineStyle(4, 0xff0000, 0.9);
-                            g.beginFill(0xff0000, 0.05);
-                            const x = Number(bounds.x) || 0;
-                            const y = Number(bounds.y) || 0;
-                            const w = Number(bounds.width) || (model.width || 0);
-                            const h = Number(bounds.height) || (model.height || 0);
-                            g.drawRect(x, y, w, h);
-                            g.endFill();
-                            g.zIndex = 1000;
-                            app.stage.addChild(g);
-                            app.stage._debugBox = g;
-
-                            // Draw a small green marker at model.position for visual center
-                            if (app.stage._debugMarker) {
-                                try { app.stage.removeChild(app.stage._debugMarker); app.stage._debugMarker.destroy({ children: true }); } catch (_) { }
-                            }
-                            const m = new PIXI.Graphics();
-                            m.beginFill(0x00ff00, 1);
-                            m.drawCircle(model.position.x, model.position.y, 8);
-                            m.endFill();
-                            m.zIndex = 1001;
-                            app.stage.addChild(m);
-                            app.stage._debugMarker = m;
-                        } catch (e) {
-                            console.warn('[Live2D] drawDebugBounds failed', e);
-                        }
-                    };
-
-                    // Draw immediately and again after a short delay (some resources finalize later)
-                    drawDebugBounds();
-                    setTimeout(drawDebugBounds, 500);
-                } catch (e) {
-                    console.warn('[Live2D] Debug helper failed', e);
-                }
-
-                // Debug: Check if model is actually visible
-                console.log('[Live2D] Model added to stage');
-                console.log('[Live2D] Model position:', model.position.x, model.position.y);
-                console.log('[Live2D] Model visible:', model.visible);
-                console.log('[Live2D] Model alpha:', model.alpha);
-                console.log('[Live2D] Model scale:', model.scale.x, model.scale.y);
-                console.log('[Live2D] Stage children:', app.stage.children.length);
-
-                // Check textures
-                if (model.internalModel && model.internalModel.textures) {
-                    console.log('[Live2D] Model has', model.internalModel.textures.length, 'textures');
-                    model.internalModel.textures.forEach((tex, i) => {
-                        console.log(`[Live2D] Texture ${i}:`, tex.width, 'x', tex.height, 'valid:', tex.valid);
-                    });
-                }
-
-                // Play idle motion if available
-                if (model.motion) {
-                    model.motion('Idle');
-                } else if (model.internalModel?.motionManager) {
-                    model.internalModel.motionManager.startMotion('Idle', 0, 3);
-                }
+                }, startVisibleMs);
 
                 updateStatus('✅ Live2D ready! Model is visible on screen.');
 
-                // 自动测试：依次播放 hiyori/motions 下的每个动作文件
-                startAutoMotionTest();
-
                 // Tap interaction
                 model.on('pointertap', () => {
-                    updateStatus('Model clicked!');
-                    if (model.motion) {
-                        model.motion('TapBody', 0, MOTION_PRIORITY_FORCE);
-                    } else if (model.internalModel?.motionManager) {
-                        model.internalModel.motionManager.startMotion('TapBody', 0, MOTION_PRIORITY_FORCE);
+                    if (!_canPlaySmileOnTap) {
+                        return;
                     }
+                    _canPlaySmileOnTap = false;
+                    updateStatus('Model clicked!');
+                    playMotionByName('Smile', 0);
+                    setTimeout(() => {
+                        setCharacterState(_currentCharacterState);
+                        _canPlaySmileOnTap = true;
+                    }, SMILE_MOTION_DURATION_MS);
                 });
 
             } catch (error) {
@@ -869,13 +811,12 @@
             }
         }
 
-        async function playMotionByEntry(entry) {
-            if (!model || !entry) return;
+        async function playMotionByName(group, index = 0) {
+            if (!model) return false;
 
-            const group = entry.group;
-            const index = Number(entry.index) || 0;
+            const resolvedGroup = resolveMotionGroupName(group);
 
-            // 尽量停止当前动作，避免被 Idle 持续覆盖
+            // 尽量停止当前动作，避免新动作被抢占。
             try {
                 if (model.internalModel?.motionManager?.stopAllMotions) {
                     model.internalModel.motionManager.stopAllMotions();
@@ -884,94 +825,60 @@
 
             let played = false;
 
-            // 1) 低层 API：按 group + index 精准播放
             try {
                 if (model.internalModel?.motionManager?.startMotion) {
                     const result = model.internalModel.motionManager.startMotion(
-                        group,
+                        resolvedGroup,
                         index,
                         MOTION_PRIORITY_FORCE
                     );
                     const resolved = result instanceof Promise ? await result : result;
-                    // 某些版本返回 false 表示未成功启动
                     played = resolved !== false;
-                    console.log('[Live2D][AutoTest] startMotion result:', resolved);
                 }
             } catch (e) {
-                console.warn('[Live2D][AutoTest] startMotion failed:', e);
+                console.warn('[Live2D] startMotion failed:', e);
             }
 
-            // 2) 高层 API：尽量传 index，失败则退化到 group
             if (!played && model.motion) {
                 try {
-                    const highResult = model.motion(group, index, MOTION_PRIORITY_FORCE);
+                    const highResult = model.motion(resolvedGroup, index, MOTION_PRIORITY_FORCE);
                     const resolvedHigh = highResult instanceof Promise ? await highResult : highResult;
-                    console.log('[Live2D][AutoTest] model.motion(group,index,priority) result:', resolvedHigh);
                     played = resolvedHigh !== false;
                 } catch (_) {
                     try {
-                        const fallbackResult = model.motion(group);
-                        const resolvedFallback = fallbackResult instanceof Promise ? await fallbackResult : fallbackResult;
-                        console.log('[Live2D][AutoTest] model.motion(group) result:', resolvedFallback);
+                        const fallback = model.motion(resolvedGroup);
+                        const resolvedFallback = fallback instanceof Promise ? await fallback : fallback;
                         played = resolvedFallback !== false;
                     } catch (e) {
-                        console.warn('[Live2D][AutoTest] model.motion failed:', e);
+                        console.warn('[Live2D] model.motion failed:', e);
                     }
                 }
             }
 
-            const fileName = String(entry.file || '').split('/').pop() || `${group}[${index}]`;
-            updateStatus(`[AutoTest] ${group}[${index}] -> ${fileName} (${played ? 'ok' : 'fail'})`);
-            console.log('[Live2D][AutoTest] Playing:', entry);
+            updateStatus(`[Motion] ${resolvedGroup}[${index}] -> ${played ? 'ok' : 'fail'}`);
+            return played;
         }
 
-        function startAutoMotionTest() {
-            if (!model) return;
-            if (!_motionPlaylist.length) {
-                updateStatus('[AutoTest] No motions found');
+        function setCharacterState(state) {
+            const next = String(state || 'normal').toLowerCase();
+
+            if (!model) {
+                _pendingCharacterState = next;
                 return;
             }
 
-            stopAutoMotionTest();
-            _motionLoopIndex = 0;
-            const tapBodyEntries = _motionPlaylist.filter(m => m.group === 'TapBody');
-            const idleEntries = _motionPlaylist.filter(m => m.group === 'Idle');
+            _currentCharacterState = next;
 
-            // 为了“看得见切换”，每个 Idle 后插入一次 TapBody
-            const visibleSequence = [];
-            if (tapBodyEntries.length > 0) {
-                for (const idle of idleEntries) {
-                    visibleSequence.push(idle);
-                    visibleSequence.push(tapBodyEntries[0]);
-                }
+            if (next === 'study') {
+                playMotionByName('Study', 0);
             } else {
-                visibleSequence.push(..._motionPlaylist);
-            }
-
-            if (!visibleSequence.length) {
-                updateStatus('[AutoTest] No playable motion sequence');
-                return;
-            }
-
-            updateStatus(`[AutoTest] Start visible loop ${visibleSequence.length} steps`);
-
-            // 先立即播放第一个动作（优先可见切换）
-            playMotionByEntry(visibleSequence[_motionLoopIndex]);
-
-            // 固定间隔轮播
-            _motionLoopTimer = setInterval(() => {
-                if (!model || !visibleSequence.length) return;
-                _motionLoopIndex = (_motionLoopIndex + 1) % visibleSequence.length;
-                playMotionByEntry(visibleSequence[_motionLoopIndex]);
-            }, 2200);
-        }
-
-        function stopAutoMotionTest() {
-            if (_motionLoopTimer) {
-                clearInterval(_motionLoopTimer);
-                _motionLoopTimer = null;
+                playMotionByName('Normal', 0);
             }
         }
+
+        window.setCharacterState = setCharacterState;
+        window.playMotionByName = playMotionByName;
+
 
         function changeExpression(exprName) {
             if (!model) return;
@@ -1016,9 +923,6 @@
             }
         });
 
-        window.addEventListener('beforeunload', () => {
-            stopAutoMotionTest();
-        });
     </script>
 </body>
 

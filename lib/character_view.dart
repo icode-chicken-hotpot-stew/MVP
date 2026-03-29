@@ -7,6 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+const double kCharacterHorizontalOffset = 20.0;
+const double kCharacterVerticalOffset = 350.0;
+
 /// Live2D 角色显示组件
 /// 负责：
 /// - WebView 初始化和管理
@@ -24,6 +27,13 @@ class CharacterView extends StatefulWidget {
   /// 默认为 'live2d/hiyori/'
   final String modelBasePath;
 
+  /// Flutter 层整体横向位移（像素）。负值向左，正值向右。
+  final double? horizontalOffset;
+
+  /// Flutter 层整体纵向位移（像素）。
+  /// 该位移作用在整个 WebView 上，不受 HTML 内部动画坐标影响。
+  final double? verticalOffset;
+
   const CharacterView({
     super.key,
     this.isActive = false,
@@ -32,6 +42,8 @@ class CharacterView extends StatefulWidget {
       'live2d/hiyori/Hiyori.2048/texture_01.png',
     ],
     this.modelBasePath = 'live2d/hiyori/',
+    this.horizontalOffset,
+    this.verticalOffset,
   });
 
   @override
@@ -40,11 +52,89 @@ class CharacterView extends StatefulWidget {
 
 class _CharacterViewState extends State<CharacterView> {
   late final WebViewController _controller;
+  bool _pageReady = false;
+  String? _lastMotionState;
+  String? _lastViewportOffsetState;
 
   @override
   void initState() {
     super.initState();
     _initializeWebView();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    // Hot reload does not necessarily trigger didUpdateWidget; force-sync offsets.
+    _syncViewportOffset(force: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant CharacterView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) {
+      _syncMotionState();
+    }
+    if (oldWidget.horizontalOffset != widget.horizontalOffset ||
+        oldWidget.verticalOffset != widget.verticalOffset) {
+      _syncViewportOffset();
+    }
+  }
+
+  Future<void> _syncMotionState({bool force = false}) async {
+    if (!_pageReady) return;
+
+    final nextState = widget.isActive ? 'study' : 'normal';
+    if (!force && _lastMotionState == nextState) return;
+
+    try {
+      final stateJson = jsonEncode(nextState);
+      await _controller.runJavaScript(
+        'if (window.setCharacterState) { window.setCharacterState($stateJson); }',
+      );
+      _lastMotionState = nextState;
+      debugPrint('[CharacterView] synced motion state -> $nextState');
+    } catch (e) {
+      debugPrint('[CharacterView] failed to sync motion state: $e');
+    }
+  }
+
+  Future<void> _syncViewportOffset({bool force = false}) async {
+    if (!_pageReady) return;
+
+    final x = widget.horizontalOffset ?? kCharacterHorizontalOffset;
+    final y = widget.verticalOffset ?? kCharacterVerticalOffset;
+    final nextState = '$x|$y';
+    if (!force && _lastViewportOffsetState == nextState) return;
+
+    try {
+      await _controller.runJavaScript(
+        'if (window.setViewportOffset) { window.setViewportOffset(${x.toStringAsFixed(2)}, ${y.toStringAsFixed(2)}); }',
+      );
+      _lastViewportOffsetState = nextState;
+      debugPrint('[CharacterView] synced viewport offset -> x=$x, y=$y');
+    } catch (e) {
+      debugPrint('[CharacterView] failed to sync viewport offset: $e');
+    }
+  }
+
+  /// 播放指定的表情动作（如"Smile"）
+  Future<bool> playMotion(String motionName) async {
+    if (!_pageReady) {
+      debugPrint('[CharacterView] playMotion failed: page not ready');
+      return false;
+    }
+    try {
+      final nameJson = jsonEncode(motionName);
+      await _controller.runJavaScript(
+        'if (window.playMotionByName) { window.playMotionByName($nameJson, 0); }',
+      );
+      debugPrint('[CharacterView] playMotion: $motionName');
+      return true;
+    } catch (e) {
+      debugPrint('[CharacterView] failed to play motion: $e');
+      return false;
+    }
   }
 
   Future<void> _initializeWebView() async {
@@ -126,7 +216,11 @@ class _CharacterViewState extends State<CharacterView> {
       )
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageFinished: (String url) {},
+          onPageFinished: (String url) {
+            _pageReady = true;
+            _syncMotionState(force: true);
+            _syncViewportOffset(force: true);
+          },
         ),
       );
 

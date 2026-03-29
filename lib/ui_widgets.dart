@@ -418,60 +418,59 @@ class _UIWidgetsState extends State<UIWidgets> {
                     ),
                     const SizedBox(height: 2),
                     // 【本次修改】重新排列按钮：重置放左边，播放放中间，自定义按钮放右边 (临时占位)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // 【本次修改】重置按钮放左边
-                        IconButton(
-                          icon: const Icon(Icons.refresh), 
-                          // 【适配便签】图标颜色改为深棕色
-                          color: const Color(0xFF5D4037),
-                          onPressed: () => widget.controller.resetTimer(),
-                        ),
-                        
-                        // 【本次修改】播放按钮放中间
-                        ValueListenableBuilder<PomodoroPhaseStatus>(
-                          valueListenable: widget.controller.phaseStatus,
-                          builder: (context, phaseStatus, _) {
-                            return IconButton(
+                    ValueListenableBuilder<PomodoroPhaseStatus>(
+                      valueListenable: widget.controller.phaseStatus,
+                      builder: (context, phaseStatus, _) {
+                        final bool isRunning = phaseStatus == PomodoroPhaseStatus.running;
+                        final bool isReady = phaseStatus == PomodoroPhaseStatus.ready;
+
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // 【本次修改】重置按钮放左边
+                            IconButton(
+                              icon: const Icon(Icons.refresh),
+                              // 【适配便签】图标颜色改为深棕色
+                              color: const Color(0xFF5D4037),
+                              onPressed: isReady ? null : () => widget.controller.resetTimer(),
+                            ),
+
+                            // 【本次修改】播放按钮放中间
+                            IconButton(
                               icon: Icon(
-                                phaseStatus == PomodoroPhaseStatus.running
-                                    ? Icons.pause
-                                    : Icons.play_arrow,
+                                isRunning ? Icons.pause : Icons.play_arrow,
                                 size: 28,
                               ),
                               color: const Color(0xFF5D4037),
                               onPressed: _handlePrimaryPomodoroAction,
-                            );
-                          },
-                        ),
-                        
-                        // 【本次修改】自定义铅笔按钮放右边 (临时占位)
-                        // 下方是为你留好的铅笔图片引入坑位，参考下方教程进行操作
-                        const SizedBox(width: 8), // 按钮间距
-                        /*
-                        // 【教程：铅笔按钮引入】
-                        // 将此 IconButton 替换为以下代码块
-                        GestureDetector(
-                          onTap: _openPomodoroConfig,
-                          child: SizedBox(
-                            width: 32, height: 32, // 规范大小
-                            child: Image.asset(
-                              'assets/images/btn_pencil.png', // 规范命名：btn_pencil.png
-                              fit: BoxFit.contain,
                             ),
-                          ),
-                        ),
-                        */
-                        IconButton(
-                          icon: const Icon(Icons.edit), // 临时铅笔占位
-                          // 【适配便签】图标颜色改为深棕色
-                          color: const Color(0xFF5D4037),
-                          onPressed: _isTimerRunning
-                              ? null
-                              : _openPomodoroConfig,
-                        ),
-                      ],
+
+                            // 【本次修改】自定义铅笔按钮放右边 (临时占位)
+                            // 下方是为你留好的铅笔图片引入坑位，参考下方教程进行操作
+                            const SizedBox(width: 8), // 按钮间距
+                            /*
+                            // 【教程：铅笔按钮引入】
+                            // 将此 IconButton 替换为以下代码块
+                            GestureDetector(
+                              onTap: _openPomodoroConfig,
+                              child: SizedBox(
+                                width: 32, height: 32, // 规范大小
+                                child: Image.asset(
+                                  'assets/images/btn_pencil.png', // 规范命名：btn_pencil.png
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            */
+                            IconButton(
+                              icon: const Icon(Icons.edit), // 临时铅笔占位
+                              // 【适配便签】图标颜色改为深棕色
+                              color: const Color(0xFF5D4037),
+                              onPressed: isRunning ? null : _openPomodoroConfig,
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     
                     /*

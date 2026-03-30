@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -22,7 +24,11 @@ class JustAudioService implements AudioService {
     : _bgmPlayer = bgmPlayer ?? AudioPlayer(),
       _sfxPlayer = sfxPlayer ?? AudioPlayer();
 
-  static const List<String> bgmTracks = <String>['assets/music/default_bgm.mp3'];
+  static const List<String> bgmTracks = <String>[
+    'assets/music/bgm1.mp3',
+    'assets/music/bgm2.mp3',
+    'assets/music/bgm3.mp3',
+  ];
   static const String startSfxAsset = 'assets/sfx/start_sfx.mp3';
   static const String encouragementSfxAsset = 'assets/sfx/encouragement_sfx.mp3';
 
@@ -59,7 +65,11 @@ class JustAudioService implements AudioService {
     try {
       await _bgmPlayer.setVolume(_sanitizeVolume(volume));
       await _bgmPlayer.setAsset(bgmTracks[_currentTrackIndex]);
-      await _bgmPlayer.play();
+      unawaited(
+        _bgmPlayer.play().catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[AudioService] Failed to play BGM: $error\n$stackTrace');
+        }),
+      );
       return true;
     } catch (error, stackTrace) {
       debugPrint('[AudioService] Failed to play BGM: $error\n$stackTrace');
@@ -83,7 +93,11 @@ class JustAudioService implements AudioService {
         return playBgm(_currentTrackIndex, volume: volume);
       }
       await _bgmPlayer.setVolume(_sanitizeVolume(volume));
-      await _bgmPlayer.play();
+      unawaited(
+        _bgmPlayer.play().catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[AudioService] Failed to resume BGM: $error\n$stackTrace');
+        }),
+      );
       return true;
     } catch (error, stackTrace) {
       debugPrint('[AudioService] Failed to resume BGM: $error\n$stackTrace');

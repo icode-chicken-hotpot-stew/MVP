@@ -244,6 +244,11 @@ class AppController {
 
     try {
       await _supervisorNotificationService.initialize();
+      final bool permissionGranted = await _supervisorNotificationService
+          .requestPermissionIfNeeded();
+      debugPrint(
+        '[AppController] Supervisor notification permission ready=$permissionGranted',
+      );
     } catch (error, stackTrace) {
       debugPrint('[AppController] Failed to initialize notifications: $error\n$stackTrace');
     }
@@ -402,6 +407,10 @@ class AppController {
   }
 
   Future<void> handleLifecycleStateChanged(AppLifecycleState state) async {
+    debugPrint(
+      '[AppController] Lifecycle changed: state=$state phaseStatus=${phaseStatus.value} pomodoroState=${pomodoroState.value} activeSession=$_activeSupervisorSessionId',
+    );
+
     if (state == AppLifecycleState.resumed) {
       await _cancelSupervisorSession(clearState: true);
       return;
@@ -410,14 +419,23 @@ class AppController {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
       if (phaseStatus.value != PomodoroPhaseStatus.running ||
           pomodoroState.value != PomodoroState.studying) {
+        debugPrint(
+          '[AppController] Skip supervisor scheduling: timer not in studying/running state.',
+        );
         return;
       }
       if (_activeSupervisorSessionId != null) {
+        debugPrint(
+          '[AppController] Skip supervisor scheduling: session already active ($_activeSupervisorSessionId).',
+        );
         return;
       }
 
       final DateTime backgroundedAt = _now();
       final String sessionId = backgroundedAt.microsecondsSinceEpoch.toString();
+      debugPrint(
+        '[AppController] Attempt supervisor scheduling session=$sessionId at ${backgroundedAt.toIso8601String()}',
+      );
       final bool scheduled = await _supervisorNotificationService.scheduleSupervisorSession(
         backgroundedAt: backgroundedAt,
         sessionId: sessionId,
@@ -432,6 +450,9 @@ class AppController {
       _stage3mSent = false;
       _stage6mSent = false;
       await _persistSupervisorState();
+      debugPrint(
+        '[AppController] Supervisor session persisted: session=$sessionId',
+      );
     }
   }
 
@@ -947,6 +968,9 @@ class AppController {
   }
 
   Future<void> _cancelSupervisorSession({required bool clearState}) async {
+    debugPrint(
+      '[AppController] Cancel supervisor session: clearState=$clearState activeSession=$_activeSupervisorSessionId',
+    );
     await _supervisorNotificationService.cancelSupervisorSession();
     if (!clearState) {
       return;

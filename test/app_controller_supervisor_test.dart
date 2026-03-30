@@ -34,6 +34,10 @@ void main() {
       controller.dispose();
     });
 
+    test('requests notification permission on initialize', () {
+      expect(notifications.permissionRequestCalls, 1);
+    });
+
     test('schedules once when app backgrounds during studying + running', () async {
       controller.startTimer();
 

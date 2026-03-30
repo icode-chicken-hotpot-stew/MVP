@@ -4,8 +4,10 @@ import 'package:mvp_app/services/supervisor_notification_service.dart';
 class FakeSupervisorNotificationService
     implements SupervisorNotificationService {
   int initializeCalls = 0;
+  int permissionRequestCalls = 0;
   int scheduleCalls = 0;
   int cancelCalls = 0;
+  bool permissionGranted = true;
   bool scheduleResult = true;
   DateTime? lastBackgroundedAt;
   String? lastSessionId;
@@ -13,6 +15,12 @@ class FakeSupervisorNotificationService
   @override
   Future<void> initialize() async {
     initializeCalls += 1;
+  }
+
+  @override
+  Future<bool> requestPermissionIfNeeded() async {
+    permissionRequestCalls += 1;
+    return permissionGranted;
   }
 
   @override

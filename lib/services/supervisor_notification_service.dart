@@ -55,6 +55,8 @@ class LocalSupervisorNotificationService
       ),
     );
 
+    await androidPlugin?.requestNotificationsPermission();
+
     _initialized = true;
   }
 

@@ -26,19 +26,27 @@ class MainStage extends StatefulWidget {
   State<MainStage> createState() => _MainStageState();
 }
 
-class _MainStageState extends State<MainStage> {
+class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
   late final AppController controller;
   late final Future<void> _initialization;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     controller = AppController();
     _initialization = controller.initialize();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    controller.handleLifecycleStateChanged(state);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     controller.dispose();
     super.dispose();
   }
@@ -48,6 +56,12 @@ class _MainStageState extends State<MainStage> {
     return FutureBuilder<void>(
       future: _initialization,
       builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
         return Scaffold(
           body: Container(
             decoration: const BoxDecoration(

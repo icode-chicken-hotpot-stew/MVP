@@ -1,5 +1,4 @@
 // 角色显示模块 - 负责 Live2D 角色动画和交互
-library character_view;
 
 import 'dart:convert';
 import 'package:flutter/material.dart';

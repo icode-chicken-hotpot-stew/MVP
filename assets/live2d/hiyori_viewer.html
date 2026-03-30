@@ -296,11 +296,15 @@
                                 if (assetPath.endsWith('.model3.json')) {
                                     body = injectTexturesIntoModelJson(body);
                                 }
-                                const isJsonMotion = /\.json$/i.test(assetPath);
-                                try {
-                                    complete(true, isJsonMotion ? JSON.parse(body) : body, 'application/json');
-                                } catch (e) {
-                                    console.warn('[XHRPatch] JSON parse failed, returning raw body', e);
+                                const wantsJson = this.responseType === 'json';
+                                if (wantsJson) {
+                                    try {
+                                        complete(true, JSON.parse(body), 'application/json');
+                                    } catch (e) {
+                                        console.warn('[XHRPatch] JSON parse failed, returning raw body', e);
+                                        complete(true, body, 'application/json');
+                                    }
+                                } else {
                                     complete(true, body, 'application/json');
                                 }
                             }
@@ -792,19 +796,10 @@
                 model.eventMode = 'static';
                 model.cursor = 'pointer';
 
-                // 进入应用先播放 start 动画，再切到当前状态（normal/study）。
-                // 保证 start 至少可见一段时间，避免刚加载就被状态动作覆盖。
-                const startPlayed = await playMotionByName('Start', 0);
-                const startVisibleMs = startPlayed ? 3200 : 0;
-                if (startPlayed && startVisibleMs > 0) {
-                    _isTransientMotionPlaying = true;
-                    setTimeout(() => {
-                        _isTransientMotionPlaying = false;
-                        flushQueuedCharacterState();
-                    }, startVisibleMs);
-                } else {
-                    flushQueuedCharacterState();
-                }
+                // Start 动作包含旧参数（当前模型无法识别），初始化时直接跳过。
+                // 进入应用后直接切到当前状态（normal/study）。
+                updateStatus('[Init] Skip Start motion: incompatible parameter IDs');
+                flushQueuedCharacterState();
 
                 updateStatus('✅ Live2D ready! Model is visible on screen.');
 
@@ -894,13 +889,13 @@
 
         function setCharacterState(state) {
             const next = String(state || 'normal').toLowerCase();
+            _currentCharacterState = next;
 
             if (!model) {
                 _pendingCharacterState = next;
                 return;
             }
 
-            _currentCharacterState = next;
             if (_isTransientMotionPlaying) {
                 _pendingCharacterState = next;
                 updateStatus(`[State] queued -> ${next}`);

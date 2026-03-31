@@ -6,10 +6,7 @@ import 'package:just_audio/just_audio.dart';
 abstract class AudioService {
   int get trackCount;
 
-  Future<void> initialize({
-    required int trackIndex,
-    required double volume,
-  });
+  Future<void> initialize({required int trackIndex, required double volume});
 
   Future<bool> playBgm(int trackIndex, {required double volume});
   Future<void> pauseBgm();
@@ -17,6 +14,8 @@ abstract class AudioService {
   Future<void> stopBgm();
   Future<bool> playStartSfx();
   Future<bool> playEncouragementSfx();
+  Future<bool> playButtonOpenSfx();
+  Future<bool> playButtonBackSfx();
 }
 
 class JustAudioService implements AudioService {
@@ -29,14 +28,21 @@ class JustAudioService implements AudioService {
     'assets/music/bgm2.mp3',
     'assets/music/bgm3.mp3',
   ];
-  static const String startSfxAsset = 'assets/sfx/start_sfx.mp3';
-  static const String encouragementSfxAsset = 'assets/sfx/encouragement_sfx.mp3';
+  static const String studyStartSfxAsset = 'assets/sfx/study_start.mp3';
+  static const String studyEndSfxAsset = 'assets/sfx/study_end.mp3';
+  static const String buttonOpenSfxAsset = 'assets/sfx/button_open.mp3';
+  static const String buttonBackSfxAsset = 'assets/sfx/button_back.mp3';
+  static const Duration sfxAnyTypeCooldown = Duration(milliseconds: 180);
+  static const Duration sfxSameAssetDedupWindow = Duration(milliseconds: 360);
 
   final AudioPlayer _bgmPlayer;
   final AudioPlayer _sfxPlayer;
 
   bool _initialized = false;
   int _currentTrackIndex = 0;
+  bool _sfxStartInFlight = false;
+  String? _lastSfxAssetPath;
+  DateTime? _lastSfxAcceptedAt;
 
   @override
   int get trackCount => bgmTracks.length;
@@ -95,7 +101,9 @@ class JustAudioService implements AudioService {
       await _bgmPlayer.setVolume(_sanitizeVolume(volume));
       unawaited(
         _bgmPlayer.play().catchError((Object error, StackTrace stackTrace) {
-          debugPrint('[AudioService] Failed to resume BGM: $error\n$stackTrace');
+          debugPrint(
+            '[AudioService] Failed to resume BGM: $error\n$stackTrace',
+          );
         }),
       );
       return true;
@@ -115,20 +123,64 @@ class JustAudioService implements AudioService {
   }
 
   @override
-  Future<bool> playStartSfx() => _playSfx(startSfxAsset);
+  Future<bool> playStartSfx() => _playSfx(studyStartSfxAsset);
 
   @override
-  Future<bool> playEncouragementSfx() => _playSfx(encouragementSfxAsset);
+  Future<bool> playEncouragementSfx() => _playSfx(studyEndSfxAsset);
+
+  @override
+  Future<bool> playButtonOpenSfx() => _playSfx(buttonOpenSfxAsset);
+
+  @override
+  Future<bool> playButtonBackSfx() => _playSfx(buttonBackSfxAsset);
 
   Future<bool> _playSfx(String assetPath) async {
+    final DateTime now = DateTime.now();
+    final DateTime? lastAt = _lastSfxAcceptedAt;
+    final Duration? elapsed = lastAt == null ? null : now.difference(lastAt);
+
+    if (_sfxStartInFlight) {
+      debugPrint(
+        '[AudioService] Skip SFX while previous start is in flight: $assetPath',
+      );
+      return true;
+    }
+
+    final bool isRapidConsecutiveBurst =
+        elapsed != null && elapsed < sfxAnyTypeCooldown;
+    if (isRapidConsecutiveBurst) {
+      debugPrint('[AudioService] Skip rapid consecutive SFX burst: $assetPath');
+      return true;
+    }
+
+    final bool isSameAssetDuplicate =
+        _lastSfxAssetPath == assetPath &&
+        elapsed != null &&
+        elapsed < sfxSameAssetDedupWindow;
+    if (isSameAssetDuplicate) {
+      debugPrint('[AudioService] Skip duplicate SFX burst: $assetPath');
+      return true;
+    }
+
+    _sfxStartInFlight = true;
+    _lastSfxAssetPath = assetPath;
+    _lastSfxAcceptedAt = now;
+
     try {
+      await _sfxPlayer.stop();
       await _sfxPlayer.setAsset(assetPath);
       await _sfxPlayer.seek(Duration.zero);
-      await _sfxPlayer.play();
+      unawaited(
+        _sfxPlayer.play().catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[AudioService] Failed to play SFX: $error\n$stackTrace');
+        }),
+      );
       return true;
     } catch (error, stackTrace) {
       debugPrint('[AudioService] Failed to play SFX: $error\n$stackTrace');
       return false;
+    } finally {
+      _sfxStartInFlight = false;
     }
   }
 

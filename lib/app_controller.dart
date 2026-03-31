@@ -39,9 +39,15 @@ const List<int> _kLevelThresholds = <int>[
 ];
 
 enum PomodoroState { resting, studying }
+
 enum PomodoroPhaseStatus { ready, running, paused }
 
 enum _PhaseSfxType { start, encouragement }
+
+enum _UiSfxType { open, back }
+
+const Duration _kUiSfxAnyTypeCooldown = Duration(milliseconds: 180);
+const Duration _kUiSfxSameTypeDedupWindow = Duration(milliseconds: 320);
 
 class _PomodoroSnapshot {
   const _PomodoroSnapshot({
@@ -109,10 +115,12 @@ class _PomodoroSnapshot {
         return null;
       }
 
-      final PomodoroState? pomodoroState = PomodoroState.values.cast<PomodoroState?>().firstWhere(
-        (PomodoroState? value) => value?.name == pomodoroStateName,
-        orElse: () => null,
-      );
+      final PomodoroState? pomodoroState = PomodoroState.values
+          .cast<PomodoroState?>()
+          .firstWhere(
+            (PomodoroState? value) => value?.name == pomodoroStateName,
+            orElse: () => null,
+          );
       final PomodoroPhaseStatus? phaseStatus = PomodoroPhaseStatus.values
           .cast<PomodoroPhaseStatus?>()
           .firstWhere(
@@ -127,7 +135,9 @@ class _PomodoroSnapshot {
       return _PomodoroSnapshot(
         pomodoroState: pomodoroState,
         phaseStatus: phaseStatus,
-        startedAt: startedAtRaw == null ? null : DateTime.tryParse(startedAtRaw)?.toLocal(),
+        startedAt: startedAtRaw == null
+            ? null
+            : DateTime.tryParse(startedAtRaw)?.toLocal(),
         phaseDurationSeconds: phaseDurationSeconds,
         remainingSeconds: remainingSeconds,
         focusDurationSeconds: focusDurationSeconds,
@@ -171,7 +181,9 @@ class AppController {
        isDrawerOpen = ValueNotifier<bool>(initialDrawerOpen),
        currentDate = ValueNotifier<String>(initialDate ?? _formatCurrentDate()),
        pomodoroState = ValueNotifier<PomodoroState>(PomodoroState.resting),
-       phaseStatus = ValueNotifier<PomodoroPhaseStatus>(PomodoroPhaseStatus.ready),
+       phaseStatus = ValueNotifier<PomodoroPhaseStatus>(
+         PomodoroPhaseStatus.ready,
+       ),
        focusDurationSeconds = ValueNotifier<int>(kDefaultPomodoroSeconds),
        restDurationSeconds = ValueNotifier<int>(kDefaultRestSeconds),
        cycleCount = ValueNotifier<int?>(null),
@@ -185,7 +197,8 @@ class AppController {
        currentTrackIndex = ValueNotifier<int>(0),
        musicVolume = ValueNotifier<double>(1.0),
        _supervisorNotificationService =
-           supervisorNotificationService ?? LocalSupervisorNotificationService(),
+           supervisorNotificationService ??
+           LocalSupervisorNotificationService(),
        _audioService = audioService ?? JustAudioService(),
        _now = now ?? DateTime.now;
 
@@ -221,6 +234,8 @@ class AppController {
   bool _stage3mSent = false;
   bool _stage6mSent = false;
   bool _musicPausedForLifecycle = false;
+  _UiSfxType? _lastUiSfxType;
+  DateTime? _lastUiSfxTriggeredAt;
 
   static String _formatCurrentDate() {
     final DateTime now = DateTime.now();
@@ -250,7 +265,9 @@ class AppController {
         '[AppController] Supervisor notification permission ready=$permissionGranted',
       );
     } catch (error, stackTrace) {
-      debugPrint('[AppController] Failed to initialize notifications: $error\n$stackTrace');
+      debugPrint(
+        '[AppController] Failed to initialize notifications: $error\n$stackTrace',
+      );
     }
 
     try {
@@ -259,7 +276,9 @@ class AppController {
         volume: musicVolume.value,
       );
     } catch (error, stackTrace) {
-      debugPrint('[AppController] Failed to initialize audio: $error\n$stackTrace');
+      debugPrint(
+        '[AppController] Failed to initialize audio: $error\n$stackTrace',
+      );
     }
 
     final _PomodoroSnapshot? snapshot = _PomodoroSnapshot.fromJsonString(
@@ -350,7 +369,8 @@ class AppController {
 
   void pauseTimer() {
     final PomodoroPhaseStatus status = phaseStatus.value;
-    if (status == PomodoroPhaseStatus.ready || status == PomodoroPhaseStatus.paused) {
+    if (status == PomodoroPhaseStatus.ready ||
+        status == PomodoroPhaseStatus.paused) {
       return;
     }
 
@@ -434,8 +454,12 @@ class AppController {
 
     if (state == AppLifecycleState.resumed) {
       await _cancelSupervisorSession(clearState: true);
-      if (_musicPausedForLifecycle && musicAutoPlayEnabled.value && isMusicPlaying.value) {
-        final bool resumed = await _audioService.resumeBgm(volume: musicVolume.value);
+      if (_musicPausedForLifecycle &&
+          musicAutoPlayEnabled.value &&
+          isMusicPlaying.value) {
+        final bool resumed = await _audioService.resumeBgm(
+          volume: musicVolume.value,
+        );
         if (!resumed) {
           debugPrint('[AppController] Failed to resume lifecycle-paused BGM.');
           isMusicPlaying.value = false;
@@ -450,13 +474,16 @@ class AppController {
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
-      if (!_musicPausedForLifecycle && musicAutoPlayEnabled.value && isMusicPlaying.value) {
+      if (!_musicPausedForLifecycle &&
+          musicAutoPlayEnabled.value &&
+          isMusicPlaying.value) {
         await _audioService.pauseBgm();
         _musicPausedForLifecycle = true;
       }
     }
 
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       if (phaseStatus.value != PomodoroPhaseStatus.running ||
           pomodoroState.value != PomodoroState.studying) {
         debugPrint(
@@ -476,10 +503,11 @@ class AppController {
       debugPrint(
         '[AppController] Attempt supervisor scheduling session=$sessionId at ${backgroundedAt.toIso8601String()}',
       );
-      final bool scheduled = await _supervisorNotificationService.scheduleSupervisorSession(
-        backgroundedAt: backgroundedAt,
-        sessionId: sessionId,
-      );
+      final bool scheduled = await _supervisorNotificationService
+          .scheduleSupervisorSession(
+            backgroundedAt: backgroundedAt,
+            sessionId: sessionId,
+          );
       if (!scheduled) {
         debugPrint('[AppController] Supervisor reminders skipped.');
         return;
@@ -603,6 +631,14 @@ class AppController {
     }
   }
 
+  Future<void> triggerUiOpenSfx() async {
+    await _playUiSfx(_UiSfxType.open);
+  }
+
+  Future<void> triggerUiBackSfx() async {
+    await _playUiSfx(_UiSfxType.back);
+  }
+
   int get currentPhaseDurationSeconds => _currentPhaseTotalSeconds;
 
   int get _currentPhaseTotalSeconds {
@@ -610,9 +646,13 @@ class AppController {
       return focusDurationSeconds.value;
     }
     if (pomodoroState.value == PomodoroState.studying) {
-      return _phaseDurationSeconds > 0 ? _phaseDurationSeconds : focusDurationSeconds.value;
+      return _phaseDurationSeconds > 0
+          ? _phaseDurationSeconds
+          : focusDurationSeconds.value;
     }
-    return _phaseDurationSeconds > 0 ? _phaseDurationSeconds : restDurationSeconds.value;
+    return _phaseDurationSeconds > 0
+        ? _phaseDurationSeconds
+        : restDurationSeconds.value;
   }
 
   void _startTicker() {
@@ -649,7 +689,8 @@ class AppController {
   _PomodoroSnapshot? _syncRunningState(DateTime now) {
     currentDate.value = _formatCurrentDate();
 
-    if (phaseStatus.value != PomodoroPhaseStatus.running || _phaseStartedAt == null) {
+    if (phaseStatus.value != PomodoroPhaseStatus.running ||
+        _phaseStartedAt == null) {
       return null;
     }
 
@@ -702,18 +743,23 @@ class AppController {
           ? PomodoroState.resting
           : snapshot.pomodoroState,
       phaseStatus: snapshot.phaseStatus,
-      startedAt: snapshot.phaseStatus == PomodoroPhaseStatus.running ? snapshot.startedAt : null,
+      startedAt: snapshot.phaseStatus == PomodoroPhaseStatus.running
+          ? snapshot.startedAt
+          : null,
       phaseDurationSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
           : _sanitizeDurationOrDefault(
               snapshot.phaseDurationSeconds,
-              snapshot.pomodoroState == PomodoroState.studying ? focusSeconds : restSeconds,
+              snapshot.pomodoroState == PomodoroState.studying
+                  ? focusSeconds
+                  : restSeconds,
             ),
       remainingSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
           : _sanitizeRemainingSeconds(
               seconds: snapshot.remainingSeconds,
-              phaseDurationSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
+              phaseDurationSeconds:
+                  snapshot.phaseStatus == PomodoroPhaseStatus.ready
                   ? focusSeconds
                   : _sanitizeDurationOrDefault(
                       snapshot.phaseDurationSeconds,
@@ -721,15 +767,20 @@ class AppController {
                           ? focusSeconds
                           : restSeconds,
                     ),
-              fallback: snapshot.pomodoroState == PomodoroState.studying ? focusSeconds : restSeconds,
+              fallback: snapshot.pomodoroState == PomodoroState.studying
+                  ? focusSeconds
+                  : restSeconds,
             ),
       focusDurationSeconds: focusSeconds,
       restDurationSeconds: restSeconds,
       cycleCount: cycles,
-      completedFocusCycles: snapshot.completedFocusCycles < 0 ? 0 : snapshot.completedFocusCycles,
+      completedFocusCycles: snapshot.completedFocusCycles < 0
+          ? 0
+          : snapshot.completedFocusCycles,
     );
 
-    if (normalized.phaseStatus != PomodoroPhaseStatus.running || normalized.startedAt == null) {
+    if (normalized.phaseStatus != PomodoroPhaseStatus.running ||
+        normalized.startedAt == null) {
       return _PhaseAdvanceResult(
         snapshot: normalized.phaseStatus == PomodoroPhaseStatus.ready
             ? _readySnapshot()
@@ -789,7 +840,9 @@ class AppController {
 
     while (true) {
       if (remainingElapsed < phaseDuration) {
-        final DateTime adjustedStart = now.subtract(Duration(seconds: remainingElapsed));
+        final DateTime adjustedStart = now.subtract(
+          Duration(seconds: remainingElapsed),
+        );
         return _PhaseAdvanceResult(
           snapshot: _PomodoroSnapshot(
             pomodoroState: state,
@@ -809,7 +862,9 @@ class AppController {
       }
 
       remainingElapsed -= phaseDuration;
-      final DateTime completedAt = startedAt!.add(Duration(seconds: phaseDuration));
+      final DateTime completedAt = startedAt!.add(
+        Duration(seconds: phaseDuration),
+      );
 
       if (state == PomodoroState.studying) {
         completedCycles += 1;
@@ -878,7 +933,10 @@ class AppController {
     }
   }
 
-  void _applySnapshot(_PomodoroSnapshot snapshot, {required bool startTickerIfRunning}) {
+  void _applySnapshot(
+    _PomodoroSnapshot snapshot, {
+    required bool startTickerIfRunning,
+  }) {
     _stopTicker();
     pomodoroState.value = snapshot.pomodoroState;
     phaseStatus.value = snapshot.phaseStatus;
@@ -892,7 +950,8 @@ class AppController {
     isActive.value = snapshot.phaseStatus == PomodoroPhaseStatus.running;
     currentDate.value = _formatCurrentDate();
 
-    if (startTickerIfRunning && snapshot.phaseStatus == PomodoroPhaseStatus.running) {
+    if (startTickerIfRunning &&
+        snapshot.phaseStatus == PomodoroPhaseStatus.running) {
       _startTicker();
     }
   }
@@ -915,7 +974,9 @@ class AppController {
     return _PomodoroSnapshot(
       pomodoroState: pomodoroState.value,
       phaseStatus: phaseStatus.value,
-      startedAt: phaseStatus.value == PomodoroPhaseStatus.running ? _phaseStartedAt : null,
+      startedAt: phaseStatus.value == PomodoroPhaseStatus.running
+          ? _phaseStartedAt
+          : null,
       phaseDurationSeconds: _currentPhaseTotalSeconds,
       remainingSeconds: phaseStatus.value == PomodoroPhaseStatus.running
           ? _remainingFromStart(
@@ -932,12 +993,14 @@ class AppController {
   }
 
   Future<void> _persistSnapshot(_PomodoroSnapshot snapshot) async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     await prefs.setString(_kPomodoroSnapshotKey, jsonEncode(snapshot.toJson()));
   }
 
   Future<void> _restoreXpState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     totalXp.value = max(0, prefs.getInt(_kXpTotalKey) ?? 0);
     dailyXp.value = max(0, prefs.getInt(_kXpDailyKey) ?? 0);
     level.value = _levelForXp(totalXp.value);
@@ -949,7 +1012,8 @@ class AppController {
   }
 
   Future<void> _persistXpState({required DateTime accountingDate}) async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     await prefs.setInt(_kXpTotalKey, totalXp.value);
     await prefs.setInt(_kXpDailyKey, dailyXp.value);
     await prefs.setString(_kXpLastDateKey, _dateKey(accountingDate));
@@ -960,7 +1024,8 @@ class AppController {
     DateTime now, {
     bool persistIfChanged = true,
   }) async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     final String today = _dateKey(now);
     final String? lastDate = prefs.getString(_kXpLastDateKey);
     if (lastDate == null) {
@@ -979,8 +1044,10 @@ class AppController {
   }
 
   Future<void> _restoreMusicState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
-    musicAutoPlayEnabled.value = prefs.getBool(_kMusicAutoPlayEnabledKey) ?? true;
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
+    musicAutoPlayEnabled.value =
+        prefs.getBool(_kMusicAutoPlayEnabledKey) ?? true;
     isMusicPlaying.value = prefs.getBool(_kMusicIsPlayingKey) ?? true;
     currentTrackIndex.value = max(0, prefs.getInt(_kMusicTrackIndexKey) ?? 0);
     final double savedVolume = prefs.getDouble(_kMusicVolumeKey) ?? 1.0;
@@ -988,7 +1055,8 @@ class AppController {
   }
 
   Future<void> _persistMusicState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     await prefs.setBool(_kMusicAutoPlayEnabledKey, musicAutoPlayEnabled.value);
     await prefs.setBool(_kMusicIsPlayingKey, isMusicPlaying.value);
     await prefs.setInt(_kMusicTrackIndexKey, currentTrackIndex.value);
@@ -1006,17 +1074,61 @@ class AppController {
     return started;
   }
 
+  Future<void> _playUiSfx(_UiSfxType type) async {
+    final DateTime now = _now();
+    final DateTime? lastAt = _lastUiSfxTriggeredAt;
+    final Duration? elapsed = lastAt == null ? null : now.difference(lastAt);
+
+    final bool isRapidConsecutiveBurst =
+        elapsed != null && elapsed < _kUiSfxAnyTypeCooldown;
+    if (isRapidConsecutiveBurst) {
+      debugPrint('[AppController] Skip rapid consecutive UI SFX burst: ${type.name}.');
+      return;
+    }
+
+    final bool isDuplicateBurst =
+        _lastUiSfxType == type &&
+        elapsed != null &&
+        elapsed < _kUiSfxSameTypeDedupWindow;
+    if (isDuplicateBurst) {
+      debugPrint('[AppController] Skip duplicate UI SFX burst: ${type.name}.');
+      return;
+    }
+
+    _lastUiSfxType = type;
+    _lastUiSfxTriggeredAt = now;
+
+    final bool played;
+    if (type == _UiSfxType.open) {
+      played = await _audioService.playButtonOpenSfx();
+    } else {
+      played = await _audioService.playButtonBackSfx();
+    }
+
+    if (!played) {
+      debugPrint(
+        '[AppController] UI SFX playback degraded silently: ${type.name}.',
+      );
+    }
+  }
+
   Future<void> _restoreSupervisorState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     _activeSupervisorSessionId = prefs.getString(_kSupervisorSessionIdKey);
-    final String? rawBackgroundAt = prefs.getString(_kSupervisorLastBackgroundAtKey);
-    _lastBackgroundAt = rawBackgroundAt == null ? null : DateTime.tryParse(rawBackgroundAt)?.toLocal();
+    final String? rawBackgroundAt = prefs.getString(
+      _kSupervisorLastBackgroundAtKey,
+    );
+    _lastBackgroundAt = rawBackgroundAt == null
+        ? null
+        : DateTime.tryParse(rawBackgroundAt)?.toLocal();
     _stage3mSent = prefs.getBool(_kSupervisorStage3mSentKey) ?? false;
     _stage6mSent = prefs.getBool(_kSupervisorStage6mSentKey) ?? false;
   }
 
   Future<void> _persistSupervisorState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     if (_activeSupervisorSessionId == null) {
       await prefs.remove(_kSupervisorSessionIdKey);
       await prefs.remove(_kSupervisorLastBackgroundAtKey);
@@ -1025,7 +1137,10 @@ class AppController {
       return;
     }
 
-    await prefs.setString(_kSupervisorSessionIdKey, _activeSupervisorSessionId!);
+    await prefs.setString(
+      _kSupervisorSessionIdKey,
+      _activeSupervisorSessionId!,
+    );
     if (_lastBackgroundAt != null) {
       await prefs.setString(
         _kSupervisorLastBackgroundAtKey,
@@ -1060,7 +1175,8 @@ class AppController {
         a.restDurationSeconds == b.restDurationSeconds &&
         a.cycleCount == b.cycleCount &&
         a.completedFocusCycles == b.completedFocusCycles &&
-        a.startedAt?.millisecondsSinceEpoch == b.startedAt?.millisecondsSinceEpoch;
+        a.startedAt?.millisecondsSinceEpoch ==
+            b.startedAt?.millisecondsSinceEpoch;
   }
 
   int _remainingFromStart({

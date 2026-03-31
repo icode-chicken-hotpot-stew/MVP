@@ -28,6 +28,7 @@ flutter:
     - assets/background.webp
     - assets/images/
     - assets/music/
+    - assets/sfx/
     - assets/live2d/hiyori_viewer.html
     - assets/live2d/libs/
     - assets/live2d/hiyori/

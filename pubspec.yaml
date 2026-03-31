@@ -9,9 +9,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  webview_flutter: 4.11.0
-  webview_flutter_android: 4.10.11
-  shared_preferences: ^2.3.2
+  google_fonts: ^8.0.2
+  webview_flutter: ^4.11.0
+  webview_flutter_android: ^4.10.11
+  shared_preferences: ^2.5.3
+  just_audio: ^0.10.5
+  flutter_local_notifications: ^19.4.2
+  timezone: ^0.10.1
 
 dev_dependencies:
   flutter_test:
@@ -23,11 +27,16 @@ flutter:
   assets:
     - assets/background.webp
     - assets/images/
+    - assets/music/
     - assets/live2d/hiyori_viewer.html
     - assets/live2d/libs/
     - assets/live2d/hiyori/
     - assets/live2d/hiyori/Hiyori.2048/
-    - assets/live2d/hiyori/motions/
-    - assets/live2d/hiyori_pro/
-    - assets/live2d/hiyori_pro/hiyori_movie_pro_t03.4096/
-    - assets/live2d/hiyori_pro/motion/
+
+fonts:
+  - family: ZhuoKai
+    fonts:
+      - asset: assets/fonts/Jiangxizhuokai.ttf
+  - family: ZCOOLKuaiLe-Regular
+    fonts:
+      - asset: assets/fonts/ZCOOLKuaiLe-Regular.ttf

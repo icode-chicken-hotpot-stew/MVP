@@ -15,11 +15,11 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 class CharacterView extends StatefulWidget {
   /// 是否正在计时（用于扩展：active 时播放动作，idle 时播放待机）
   final bool isActive;
-  
+
   /// 纹理文件路径列表（相对于 assets 目录）
   /// 默认为 Hiyori 模型的纹理：texture_00.png, texture_01.png
   final List<String> texturePaths;
-  
+
   /// 模型基础路径（相对于 assets 目录）
   /// 默认为 'live2d/hiyori/'
   final String modelBasePath;
@@ -56,7 +56,9 @@ class _CharacterViewState extends State<CharacterView> {
       final androidController = controller.platform as AndroidWebViewController;
       androidController.setMediaPlaybackRequiresUserGesture(false);
       // 设置 WebView 透明背景
-      androidController.setBackgroundColor(const Color(0x00000000)); // ARGB: 00=透明, 000000=黑色
+      androidController.setBackgroundColor(
+        const Color(0x00000000),
+      ); // ARGB: 00=透明, 000000=黑色
     }
 
     _controller = controller
@@ -125,9 +127,7 @@ class _CharacterViewState extends State<CharacterView> {
         },
       )
       ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageFinished: (String url) {},
-        ),
+        NavigationDelegate(onPageFinished: (String url) {}),
       );
 
     // 读取所有文件内容
@@ -142,7 +142,7 @@ class _CharacterViewState extends State<CharacterView> {
         final texturePath = widget.texturePaths[i];
         final data = await rootBundle.load('assets/$texturePath');
         final base64 = base64Encode(data.buffer.asUint8List());
-        
+
         // 从路径获取纹理键名（例如 texture_00）
         final fileName = texturePath.split('/').last.replaceAll('.png', '');
         preloadedTextures[fileName] = 'data:image/png;base64,$base64';
@@ -186,7 +186,8 @@ class _CharacterViewState extends State<CharacterView> {
 
     await _controller.loadHtmlString(
       modifiedHtml,
-      baseUrl: 'https://appassets.androidplatform.net/assets/${widget.modelBasePath}',
+      baseUrl:
+          'https://appassets.androidplatform.net/assets/${widget.modelBasePath}',
     );
   }
 

@@ -9,10 +9,11 @@
 
 - [x] 2.1 Add lifecycle observer wiring so controller receives app foreground/background transitions
 - [x] 2.2 Create a background-session model and schedule stage notifications at +180s and +360s
-- [x] 2.3 Enforce session limits: max two notifications per session, no duplicate stage triggers
+- [x] 2.3 Enforce session-level duplicate suppression after successful schedule
 - [x] 2.4 Cancel pending supervisor notifications on foreground return, pause, reset, or phase exit from studying/running
 - [x] 2.5 Add graceful permission-denied handling and non-blocking logging
 - [x] 2.6 Add notification payload contract to distinguish `3m` and `6m` stage in logs/analytics
+- [ ] 2.7 Run Android device verification for permission prompt, real notification delivery, and native debug receiver logs
 
 ## 3. Focus XP, level, and strict dialogue unlock
 
@@ -30,7 +31,8 @@
 - [x] 4.3 Persist manual override state (`isPlaying`, `autoPlayEnabled`, track, volume)
 - [x] 4.4 Trigger phase SFX on start and phase transitions defined in spec
 - [x] 4.5 Ensure audio failures degrade silently and do not block timer transitions
-- [x] 4.6 Define BGM and SFX coexistence behavior to avoid unintended playback interruption
+- [x] 4.6 Define BGM and SFX coexistence behavior with separate playback channels
+- [ ] 4.7 Add actual BGM / SFX resource files under declared asset paths and verify runtime packaging
 
 ## 5. UI contract alignment
 
@@ -38,13 +40,14 @@
 - [x] 5.2 Keep pomodoro control rendering consistent with existing phase-state contracts
 - [x] 5.3 Surface dialogue lock reason text from strict level gating
 - [x] 5.4 Ensure app startup path waits for controller initialization before applying autoplay state
+- [x] 5.5 Bind XP panel and stats panel to controller-backed XP values while leaving history fetch as placeholder
 
 ## 6. Verification
 
 - [x] 6.1 Add targeted tests for 3m/6m background notifications and cancellation paths
 - [x] 6.2 Add targeted tests for XP grant formula, daily cap, day rollover, and level upgrades
 - [x] 6.3 Add targeted tests for strict level unlock behavior and rejection cases
-- [x] 6.4 Add targeted tests for BGM autoplay, manual override persistence, and phase SFX triggers
+- [x] 6.4 Add targeted tests for BGM autoplay, manual override persistence, lifecycle pause/resume, and phase SFX triggers
 - [x] 6.5 Run `flutter analyze` and `flutter test`
 - [ ] 6.6 Run manual Android verification for lifecycle transitions, notifications, and audio behavior
 - [ ] 6.7 Verify extension rollback does not affect existing pomodoro core behavior

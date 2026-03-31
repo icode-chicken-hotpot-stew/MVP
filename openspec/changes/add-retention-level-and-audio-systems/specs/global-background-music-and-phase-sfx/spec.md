@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
 ### Requirement: Auto-play global background music after app startup
-The system MUST auto-play background music after app initialization regardless of pomodoro phase state.
+The system MUST auto-play background music after app initialization regardless of pomodoro phase state, subject to persisted playback preference.
 
 #### Scenario: Startup triggers BGM autoplay
-- **WHEN** app initialization completes
+- **WHEN** app initialization completes and autoplay is enabled
 - **THEN** background music starts playing by default
 
 #### Scenario: Autoplay independent from pomodoro phase
@@ -21,6 +21,17 @@ The system MUST allow users to pause/resume BGM manually, and MUST persist playb
 #### Scenario: Restart restores playback preference
 - **WHEN** app restarts after user-adjusted playback settings
 - **THEN** controller restores track, volume, and autoplay/playing preferences
+
+### Requirement: Pause and resume BGM across lifecycle transitions
+The system MUST pause auto-managed BGM on app backgrounding and attempt to resume it on foreground return when the user has not explicitly turned music off.
+
+#### Scenario: Background pauses music
+- **WHEN** app enters background while auto-managed BGM is playing
+- **THEN** the controller pauses BGM without discarding playback preference
+
+#### Scenario: Foreground resumes lifecycle-paused music
+- **WHEN** app returns to foreground after lifecycle-driven pause
+- **THEN** the controller attempts to resume BGM using persisted volume
 
 ### Requirement: Trigger phase SFX on defined phase transitions
 The system MUST trigger short SFX on specific pomodoro transitions: start focus, focus-to-rest completion, and rest-to-focus continuation.

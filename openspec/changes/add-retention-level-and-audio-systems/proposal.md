@@ -1,23 +1,28 @@
 ## Why
-当前 `improve-pomodoro-functionality` 已聚焦番茄钟核心状态机稳定化，但留存与体验增强需求（后台提醒、XP成长、全局音乐）已明确，不应继续挤入主变更导致范围膨胀。
+当前 `improve-pomodoro-functionality` 已经把番茄钟核心状态机稳定下来，而留存增强相关能力更适合以并行 change 独立演进：
 
-在当前 1 周开发窗口，采用并行变更可把“核心计时可靠性”和“增长体验能力”拆分推进，降低回归复杂度并提高交付确定性。
+- 后台监管提醒：提升用户从后台回流的概率
+- XP / 等级：把专注完成转成可持续成长反馈
+- 全局音乐 / 阶段音效：增强陪伴感与启动反馈
+
+根据当前仓库实现，这三条能力已经以 controller 扩展、服务抽象、持久化键和针对性测试的形式落地；本次文档更新的目标是把变更说明收敛到**当前真实实现范围**，同时保留尚未完成的手工验证项。
 
 ## What Changes
 
-- 新增后台监管能力：仅在 `studying + running` 切后台时开启监管，同一后台会话按 180 秒和 360 秒触发两段提醒。
-- 新增 XP/等级能力：专注完成后结算 XP、执行日上限与等级晋升，并提供严格按等级的对话解锁判定。
-- 新增全局音乐能力：应用初始化后自动播放背景音乐，阶段切换触发音效，音频故障不阻塞计时主流程。
-- 新增上述能力的本地持久化约束与恢复行为。
-- 新增针对监管、XP、音乐三条链路的测试与手工验证任务。
+- 新增后台监管能力：仅在 `studying + running` 切后台时开启监管，同一后台会话按 180 秒和 360 秒调度两段提醒；恢复前台、暂停、重置或离开专注阶段时取消监管。
+- 新增 XP / 等级能力：专注阶段自然完成后结算 XP，执行每日 2000 XP 上限、按固定阈值升等级，并提供严格按等级的对话解锁判定与锁定文案。
+- 新增全局音乐能力：应用初始化后按持久化偏好自动播放背景音乐，支持上一首 / 下一首 / 播放暂停 / 静音切换，并在阶段切换时触发启动 / 鼓励音效。
+- 新增本地持久化恢复：`pomodoro`、`xp`、`music`、`supervisor` 四类状态均通过 `SharedPreferences` 恢复。
+- 新增面向 controller 的测试：覆盖后台监管、XP 结算、音乐自动播放 / 生命周期恢复等关键链路。
+- 明确保留范围外内容：历史统计 / 留存分析面板仍未重建，`fetchHistoryData()` 仍为占位实现，不属于本 change 已完成部分。
 
 ## Capabilities
 
 ### New Capabilities
 
-- `pomodoro-background-supervisor-notifications`: 定义后台监管会话、3分钟/6分钟分段提醒、去重与取消规则。
-- `focus-xp-level-and-dialogue-unlock`: 定义 XP 结算、每日上限、等级阈值与严格等级解锁。
-- `global-background-music-and-phase-sfx`: 定义全局背景音乐自动播放、用户覆盖持久化与阶段音效触发。
+- `pomodoro-background-supervisor-notifications`: 后台监管会话、3 分钟 / 6 分钟提醒、取消与失败降级。
+- `focus-xp-level-and-dialogue-unlock`: XP 结算、每日上限、固定等级阈值、严格等级解锁。
+- `global-background-music-and-phase-sfx`: 全局背景音乐自动播放、用户覆盖持久化、阶段音效与生命周期暂停 / 恢复。
 
 ### Modified Capabilities
 
@@ -26,15 +31,25 @@
 ## Impact
 
 - Affected code:
-  - `lib/app_controller.dart`（新增监管、XP、音乐状态与行为）
-  - `lib/main.dart`（初始化阶段接入音频/监管准备逻辑）
-  - `lib/ui_widgets.dart`（音乐控制与等级解锁提示消费 controller 状态）
+  - `lib/app_controller.dart`
+  - `lib/main.dart`
+  - `lib/ui_widgets.dart`
+  - `lib/services/audio_service.dart`
+  - `lib/services/supervisor_notification_service.dart`
+  - `android/app/src/main/kotlin/com/example/mvp_app/MainActivity.kt`
+  - `android/app/src/main/kotlin/com/example/mvp_app/SupervisorNotificationDebugReceiver.kt`
+  - `test/app_controller_audio_test.dart`
+  - `test/app_controller_supervisor_test.dart`
+  - `test/app_controller_xp_test.dart`
 - Dependencies:
-  - 新增本地通知插件（用于 3m/6m 提醒）
-  - 新增音频播放插件（用于 BGM + SFX）
+  - `just_audio`
+  - `flutter_local_notifications`
+  - `timezone`
+  - `shared_preferences`
 - Systems:
-  - Android 生命周期回调与通知权限链路
-  - 本地 key-value 持久化键空间扩展（supervisor/xp/music）
+  - Android 生命周期回调
+  - 本地通知调度与权限请求
+  - 本地 key-value 持久化键空间扩展（`pomodoro` / `xp` / `music` / `supervisor`）
 - APIs/contracts:
-  - controller 增加等级解锁判定接口与音乐控制接口
-  - 对话层解锁判定改为严格 level-only contract
+  - controller 暴露等级解锁、音乐控制、生命周期处理接口
+  - UI 通过 `ValueNotifier` 消费 XP / 等级 / 音乐状态

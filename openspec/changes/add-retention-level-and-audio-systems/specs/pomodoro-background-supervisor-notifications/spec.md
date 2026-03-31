@@ -11,46 +11,50 @@ The system MUST start a background supervisor session only when the app enters b
 - **WHEN** the app transitions to background while pomodoro is not `studying + running`
 - **THEN** the controller does not create a supervisor session
 
-### Requirement: Send two staged notifications at 3 minutes and 6 minutes
-For each valid background supervisor session, the system MUST send at most two local notifications: first at 180 seconds and second at 360 seconds after session start.
+### Requirement: Schedule two staged notifications at 3 minutes and 6 minutes
+For each valid background supervisor session, the system MUST schedule at most two local notifications: first at 180 seconds and second at 360 seconds after session start.
 
 #### Scenario: First staged reminder at 3 minutes
-- **WHEN** a valid supervisor session reaches 180 seconds in background
-- **THEN** the system sends the first reminder notification once
+- **WHEN** a valid supervisor session is scheduled
+- **THEN** the system schedules a first reminder notification for 180 seconds after background entry
 
 #### Scenario: Second staged reminder at 6 minutes
-- **WHEN** the same supervisor session reaches 360 seconds in background
-- **THEN** the system sends the second reminder notification once
+- **WHEN** the same supervisor session is scheduled
+- **THEN** the system schedules a second reminder notification for 360 seconds after background entry
 
-### Requirement: Enforce session-level deduplication
-The system MUST prevent duplicate staged notifications within the same background session, including repeated lifecycle callbacks or scheduling retries.
+### Requirement: Prevent duplicate scheduling while a session is active
+The system MUST prevent duplicate supervisor scheduling while the same background session remains active.
 
-#### Scenario: Duplicate callback does not duplicate 3-minute notification
-- **WHEN** lifecycle callbacks repeat within one session around the 180-second node
-- **THEN** the 3-minute stage is marked as sent and not sent again
+#### Scenario: Repeated background callback after successful scheduling
+- **WHEN** lifecycle callbacks repeat after a supervisor session has already been activated
+- **THEN** the controller does not create or schedule a second session
 
-#### Scenario: Duplicate callback does not duplicate 6-minute notification
-- **WHEN** lifecycle callbacks repeat within one session around the 360-second node
-- **THEN** the 6-minute stage is marked as sent and not sent again
+#### Scenario: Failed schedule can be retried by a later callback
+- **WHEN** scheduling fails and no active session is recorded
+- **THEN** a later eligible background callback may attempt scheduling again
 
 ### Requirement: Cancel pending stages when session becomes invalid
 The system MUST cancel pending supervisor stages when any invalidation event occurs: app returns foreground, timer pauses, timer resets, or phase exits the `studying + running` combination.
 
 #### Scenario: Return foreground before 3 minutes
 - **WHEN** user returns foreground before 180 seconds
-- **THEN** no staged reminder is sent
+- **THEN** no staged reminder is delivered for that session
 
 #### Scenario: Return foreground between stages
-- **WHEN** user returns foreground after 3-minute stage but before 6-minute stage
-- **THEN** the 6-minute stage is canceled and not sent
+- **WHEN** user returns foreground after scheduling but before the second stage has fired
+- **THEN** pending reminders for the active session are canceled
 
 #### Scenario: Pause while backgrounded
 - **WHEN** pomodoro is paused during a supervisor session
 - **THEN** all pending stages are canceled
 
-### Requirement: Graceful permission-denied handling
-If local-notification permission is unavailable, the system MUST degrade gracefully without blocking timer execution or causing app errors.
+### Requirement: Include stage payload and handle permission denial gracefully
+Supervisor notifications MUST include session/stage payload metadata, and permission denial MUST degrade gracefully without blocking timer execution or causing app errors.
+
+#### Scenario: Notification payload distinguishes stage
+- **WHEN** the service schedules staged reminders
+- **THEN** each reminder payload includes the session identifier and either `3m` or `6m` stage metadata
 
 #### Scenario: Notification permission denied
-- **WHEN** the staged reminder is due but permission is denied
+- **WHEN** permission is unavailable during scheduling
 - **THEN** the system skips delivery and records non-blocking diagnostics

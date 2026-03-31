@@ -12,10 +12,10 @@ The system MUST grant XP only on focus completion boundaries and MUST reject fra
 - **THEN** granted XP is 0 for that completion
 
 ### Requirement: Apply XP formula and daily cap
-The system MUST apply `xpGain = floor(focusMinutes) * 10 * multiplier` with default `multiplier = 1.0`, and MUST enforce a per-day cap of 2000 XP.
+The system MUST apply `xpGain = floor(focusMinutes) * 10` and MUST enforce a per-day cap of 2000 XP.
 
 #### Scenario: Standard 25-minute focus award
-- **WHEN** a 25-minute effective focus completion is processed with default multiplier
+- **WHEN** a 25-minute effective focus completion is processed
 - **THEN** the granted XP is 250
 
 #### Scenario: Daily cap reached
@@ -34,7 +34,7 @@ The system MUST persist total XP, daily XP, level, and last accounting date to s
 - **THEN** daily XP bucket resets before processing new XP grants
 
 ### Requirement: Use fixed level thresholds for LV1-LV10
-The system MUST evaluate level-up against the fixed cumulative XP thresholds for LV1-LV10 defined by product rules.
+The system MUST evaluate level-up against the fixed cumulative XP thresholds implemented by the product rules.
 
 #### Scenario: Crossing threshold upgrades level
 - **WHEN** total XP crosses the threshold for the next level

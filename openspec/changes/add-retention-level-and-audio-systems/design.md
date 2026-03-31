@@ -1,152 +1,168 @@
 ## Context
 
-本设计基于一个前提：番茄钟主状态机继续由 `improve-pomodoro-functionality` 负责，当前变更只挂载扩展能力。
+本设计建立在一个明确边界上：番茄钟核心状态机继续由 `improve-pomodoro-functionality` 提供，本 change 只在其上挂接三条留存 / 体验增强链路：
 
-三条扩展能力分别消费以下既有状态：
+- 后台监管：消费 `pomodoroState + phaseStatus + lifecycle`
+- XP / 等级：消费专注阶段自然完成事件
+- 音乐 / 音效：消费应用初始化、生命周期变化与阶段切换事件
 
-- 后台监管消费 `pomodoroState + phaseStatus + lifecycle`
-- XP/等级消费 `focus completion` 事件
-- 音乐/音效消费 `app startup` 与 `phase transition` 事件
+当前仓库中，这三条链路已经进入“代码落地 + 单测覆盖 + 文档补齐”状态；仍未完成的主要是音频资源实装与 Android 真机验收。
 
 ## Goals / Non-Goals
 
-**Goals:**
+**Goals**
 
-- 在不破坏现有番茄钟主状态机的前提下，增量接入监管、XP、音乐三条能力链路。
-- 将“3分钟/6分钟后台提醒”“严格等级解锁”“全局自动背景音乐”固化为可测试契约。
-- 保持控制器单一事实源，UI 仅消费状态与方法，不新增本地业务真相。
-- 明确失败降级策略，保证音频/通知故障不影响番茄钟主流程。
+- 在不破坏现有番茄钟状态机的前提下，扩展后台监管、XP / 等级、全局音乐三条能力。
+- 保持 controller 作为单一事实源，UI 只消费 `ValueNotifier` 和 controller 方法。
+- 让音频 / 通知失败静默降级，不阻塞专注计时主流程。
+- 让能力边界与当前实现一致，避免 OpenSpec 文档继续描述已变更或未落地的方案。
 
-**Non-Goals:**
+**Non-Goals**
 
-- 不重构 `improve-pomodoro-functionality` 已定义的核心状态机。
-- 不引入云端同步、推荐算法、复杂成就系统。
-- 不在本变更内完成历史统计系统重建。
-- 不在本变更内做大规模 UI 视觉改版。
+- 不重写番茄钟核心状态机。
+- 不引入云端同步、成就系统、推荐算法。
+- 不在本变更内完成历史统计 / 留存分析系统重建。
+- 不在本变更内做大规模 UI 视觉重构。
 
 ## Architecture Sketch
 
 ```text
-                App Lifecycle
-                     |
-                     v
-+------------------------------------------------+
-|                 AppController                  |
-|                                                |
-|   Pomodoro Core (existing change)              |
-|      |- phase state machine                    |
-|      |- snapshot persistence                   |
-|      |- completion transitions                 |
-|                                                |
-|   Extensions (this change)                     |
-|      |- Background Supervisor (3m/6m notify)   |
-|      |- XP/Level Engine                        |
-|      |- Global BGM + Phase SFX                |
-+------------------------------------------------+
-                     |
-                     v
-           UI consume notifiers only
+                App Lifecycle / Startup
+                         |
+                         v
++------------------------------------------------------+
+|                    AppController                     |
+|                                                      |
+|  Pomodoro Core                                       |
+|    |- phase state machine                            |
+|    |- snapshot persistence                           |
+|    |- focus/rest transitions                         |
+|                                                      |
+|  Extension State                                     |
+|    |- XP / daily XP / level                          |
+|    |- music autoplay / playing / track / volume      |
+|    |- supervisor session / background timestamp      |
+|                                                      |
+|  Extension Services                                  |
+|    |- SupervisorNotificationService                  |
+|    |- AudioService                                   |
++------------------------------------------------------+
+                         |
+                         v
+              UI consumes ValueNotifier only
 ```
 
-## Decision 1: Use a parallel change boundary
+## Decision 1: Keep this as a parallel change
 
-采用方案B：新增并行change，不继续扩写现有主change。
+采用并行 change，而不是继续把需求并入番茄钟核心 change。
 
-理由：
+原因：
 
-1. 主change聚焦计时核心稳定性，扩展能力另行迭代更可控。
-2. QA可以按能力分桶验收，减少交叉回归成本。
-3. 回滚时可以按能力回退，不影响主状态机契约。
+1. 核心计时可靠性与体验增强的回归面不同，拆开更利于验收与回滚。
+2. 当前代码已经以 service 抽象和独立测试文件完成分层，天然适合独立维护文档边界。
+3. 历史统计 / 留存分析仍未实现，保持并行 change 可以避免误把“陪伴增强”与“统计系统重建”混为一谈。
 
-备选方案：继续把需求并入主 change。
-
-不采用原因：主 change 的目标是“计时核心可靠性”，继续并入将显著扩大评审面与测试矩阵。
-
-## Decision 2: Background supervisor as a session-based scheduler
+## Decision 2: Background supervisor uses session-based scheduling
 
 ### Model
 
-- 一次后台会话定义为：从前台离开到下一次回前台。
-- 每个后台会话只允许两个通知节点：
-  - Stage A: +180秒
-  - Stage B: +360秒
+- 一次后台监管会话定义为：从进入后台到下一次回前台或会话失效。
+- 仅在 `pomodoroState == studying && phaseStatus == running` 时允许创建会话。
+- 每个有效会话最多调度两个节点：
+  - `+180s`
+  - `+360s`
 
-### Trigger Gate
+### Current implementation choices
 
-仅当进入后台瞬间满足以下条件才创建监管会话：
+- `MainStage` 通过 `WidgetsBindingObserver` 将生命周期事件转发到 `AppController.handleLifecycleStateChanged(...)`。
+- `AppController` 通过 `SupervisorNotificationService` 抽象调度本地通知，默认实现为 `LocalSupervisorNotificationService`。
+- Flutter 层使用 `flutter_local_notifications` + `timezone` 调度 3 分钟 / 6 分钟通知。
+- Android 侧额外保留 `MethodChannel + AlarmManager + BroadcastReceiver` 调试链路，用于辅助观察监管节点触发。
+- 调度成功后持久化 `sessionId / lastBackgroundAt / stage flags`；回前台、暂停、重置、离开专注阶段时调用取消逻辑。
 
-1. `pomodoroState == studying`
-2. `phaseStatus == running`
+### Important nuance
 
-### Cancellation
+- 当前去重的主机制是“已有 active session 时不再重复调度”。
+- 当一次调度失败时，不会建立 active session，因此后续新的后台回调仍允许重试；这是当前实现的有意降级策略。
 
-出现任一事件立即取消未触发节点：
-
-1. 回前台
-2. pause
-3. reset
-4. 阶段离开 studying/running 组合
-
-备选方案：使用一次性 6 分钟单提醒。
-
-不采用原因：与已确认 PRD（3m/6m 双提醒）不一致，且无法覆盖“中途回流用户”的提醒节奏。
-
-## Decision 3: XP and level as completion-driven accounting
+## Decision 3: XP and level are completion-driven
 
 ### Grant timing
 
-仅在专注阶段自然完成时发放 XP，不做每秒累计。
+- 仅在专注阶段自然完成时发放 XP。
+- XP 结算发生在相位推进副作用阶段，而不是逐秒累计。
 
 ### Formula
 
-- `xpGain = floor(focusMinutes) * 10 * multiplier`
-- 默认 `multiplier = 1.0`
-- 单次有效专注小于5分钟，发放0
-- 每日上限2000 XP
+- `xpGain = floor(focusMinutes) * 10`
+- 单次有效专注 < 5 分钟，发放 0 XP
+- 每日上限 `2000 XP`
 
 ### Level thresholds
 
-沿用PRD中的 LV1-LV10 阶梯，累计上限 36000 XP。
+当前实现使用固定阈值表：
+
+- Lv.1: `0`
+- Lv.2: `50`
+- Lv.3: `600`
+- Lv.4: `2000`
+- Lv.5: `4500`
+- Lv.6: `8000`
+- Lv.7: `13000`
+- Lv.8: `19500`
+- Lv.9: `27000`
+- Lv.10: `36000`
 
 ### Dialogue unlock
 
-严格按等级：`currentLevel >= requiredLevel`。
+- 对话解锁严格按等级：`currentLevel >= requiredLevel`
+- controller 同时提供布尔判定与可直接展示的锁定原因文本
 
-备选方案：等级 + 任务条件混合解锁。
+### Accounting date
 
-不采用原因：当前产品已确认“严格等级”策略，混合条件会引入额外解释成本与策略分歧。
+- 日切以设备本地日期为准，通过 `yyyy-MM-dd` key 判定。
+- 当前实现未额外处理设备时间回拨。
 
-## Decision 4: Global BGM decoupled from pomodoro phase
+## Decision 4: Audio uses a dedicated service with separate BGM/SFX players
 
 ### Policy
 
-- App 完成启动初始化后自动播放背景音乐
-- 自动播放与 `resting/studying/ready` 解耦
-- 用户手动暂停/恢复可覆盖自动播放状态，并持久化
+- 应用初始化完成后，如果 `musicAutoPlayEnabled` 和 `isMusicPlaying` 为真，则自动播放 BGM。
+- 用户播放 / 暂停会覆盖自动播放意图，并持久化 `autoplay / isPlaying / track / volume`。
+- 应用切后台时，若当前处于自动播放链路，会暂停 BGM；回前台后尝试恢复。
 
-### Phase SFX
+### Current implementation choices
 
-- `ready -> studying/running`: 启动音效
-- `studying/running -> resting/running`: 鼓励音效
-- `resting/running -> studying/running`: 启动音效
+- controller 依赖 `AudioService` 抽象，默认实现为 `JustAudioService`。
+- `JustAudioService` 使用两个 `AudioPlayer`：
+  - 一个负责循环 BGM
+  - 一个负责短音效
+- 阶段音效规则：
+  - `ready -> studying/running`: 启动音效
+  - `studying/running -> resting/running`: 鼓励音效
+  - `resting/running -> studying/running`: 启动音效
 
 ### Failure mode
 
-任意音频播放失败均记录日志并静默降级，不影响计时链路。
+- 任意 BGM / SFX 播放失败都只记录日志，不阻塞 timer 状态推进。
+- 如果生命周期恢复 BGM 失败，controller 会把 `isMusicPlaying` 置为 false 并持久化，避免 UI 与实际状态继续偏离。
 
-备选方案：仅在 studying 时播放背景音乐。
+## UI Alignment
 
-不采用原因：与“App 背景音乐全局自动播放”决策冲突，且会造成状态切换时听感不连续。
+当前 UI 已完成以下对齐：
+
+- 留声机控件改为消费 `controller.isMusicPlaying` 并调用 controller 的上一首 / 下一首 / 播放暂停 / 静音接口。
+- 经验卷轴改为消费 `controller.level`、`controller.totalXp` 和 `minutesToNextLevel`。
+- 对话气泡锁定文案改为直接消费 `dialogueLockReason(...)`。
+- 黑板统计面板已切到 `dailyXp / totalXp`，但完整历史统计仍未实现，`fetchHistoryData()` 仍是占位。
 
 ## Data Persistence
 
-建议键：
+当前已使用的持久化键：
 
-- 后台监管
-  - `supervisor.lastBackgroundAt`
-  - `supervisor.stage3mSent`
-  - `supervisor.stage6mSent`
-- XP/等级
+- Pomodoro
+  - `pomodoro.snapshot`
+- XP / 等级
   - `xp.total`
   - `xp.daily`
   - `xp.lastDate`
@@ -156,31 +172,36 @@
   - `music.isPlaying`
   - `music.trackIndex`
   - `music.volume`
-
-## Migration Plan
-
-1. 基线确认：以 `improve-pomodoro-functionality` 当前已稳定状态为基线，冻结核心计时行为。
-2. 监管接入：先落生命周期监听与本地通知调度，完成 3m/6m 双节点和取消逻辑。
-3. XP 接入：接入专注完成结算、日上限、等级判定与持久化恢复。
-4. 音频接入：接入 BGM 自动播放、用户覆盖持久化与阶段 SFX。
-5. UI 对齐：替换 UI 本地音乐状态为 controller 状态消费，并补对话锁定提示。
-6. 验证与回滚：按能力分桶执行测试；若异常可按能力回退，不触碰主状态机。
+- 后台监管
+  - `supervisor.sessionId`
+  - `supervisor.lastBackgroundAt`
+  - `supervisor.stage3mSent`
+  - `supervisor.stage6mSent`
 
 ## Testing Strategy
 
-1. 监管链路：3m/6m触发、会话取消、快速前后台抖动去重。
-2. XP链路：阈值、日上限、等级晋升、日切重置。
-3. 音频链路：自动播放、手动覆盖、重启恢复、SFX触发。
-4. 回归链路：扩展能力开启后不破坏现有番茄钟主流程。
+当前已有测试覆盖：
 
-## Rollout Strategy
+1. `test/app_controller_supervisor_test.dart`
+   - 生命周期调度
+   - 非专注态不调度
+   - resume / pause / reset 取消逻辑
+   - 调度失败时的非阻塞重试
+2. `test/app_controller_xp_test.dart`
+   - 25 分钟 XP 结算
+   - <5 分钟 0 XP
+   - 每日上限
+   - 日切重置
+   - 严格等级解锁与锁定文案
+3. `test/app_controller_audio_test.dart`
+   - 初始化自动播放
+   - 手动暂停 / 恢复持久化意图
+   - 前后台暂停 / 恢复
+   - 恢复失败降级
+   - SFX 不阻塞 timer 迁移
 
-1. 先在开发环境打开扩展能力并跑单测。
-2. 真机手测后台通知与音频前后台行为。
-3. 合并后观察崩溃日志与关键事件埋点再扩大验证范围。
+## Remaining Gaps
 
-## Open Questions
-
-1. 本地通知插件选型是 `flutter_local_notifications` 还是等价方案（以 Android 生命周期兼容性为优先）。
-2. BGM 与 SFX 是否使用同一播放引擎实例，或采用双通道策略（避免抢占与中断）。
-3. XP 日切依据是否以设备本地日期为准，是否需要防设备时间回拨策略。
+1. Android 真机手工验证尚未完成，尤其是通知权限、前后台切换、真实音频播放链路。
+2. `assets/music/` 与 `assets/sfx/` 当前尚未看到实际资源文件，音频服务路径已固定，但仍需补齐资源并做真机验证。
+3. 历史统计 / 留存分析面板仍未实现，当前 change 的“retention”范围主要体现为后台回流提醒与成长反馈，不包含完整历史分析系统。

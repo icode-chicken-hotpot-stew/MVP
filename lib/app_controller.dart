@@ -221,6 +221,7 @@ class AppController {
   DateTime? _lastBackgroundAt;
   bool _stage3mSent = false;
   bool _stage6mSent = false;
+  bool _musicPausedForLifecycle = false;
 
   static String _formatCurrentDate() {
     final DateTime now = DateTime.now();
@@ -413,7 +414,26 @@ class AppController {
 
     if (state == AppLifecycleState.resumed) {
       await _cancelSupervisorSession(clearState: true);
+      if (_musicPausedForLifecycle && musicAutoPlayEnabled.value && isMusicPlaying.value) {
+        final bool resumed = await _audioService.resumeBgm(volume: musicVolume.value);
+        if (!resumed) {
+          debugPrint('[AppController] Failed to resume lifecycle-paused BGM.');
+          isMusicPlaying.value = false;
+          await _persistMusicState();
+        }
+      }
+      _musicPausedForLifecycle = false;
       return;
+    }
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      if (!_musicPausedForLifecycle && musicAutoPlayEnabled.value && isMusicPlaying.value) {
+        await _audioService.pauseBgm();
+        _musicPausedForLifecycle = true;
+      }
     }
 
     if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {

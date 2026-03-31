@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mvp_app/app_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -42,6 +43,37 @@ void main() {
       expect(controller.isMusicPlaying.value, isTrue);
       expect(controller.musicAutoPlayEnabled.value, isTrue);
       expect(audio.playBgmCalls, greaterThanOrEqualTo(2));
+    });
+
+    test('pauses on background and resumes on foreground', () async {
+      await controller.handleLifecycleStateChanged(AppLifecycleState.paused);
+      expect(audio.pauseBgmCalls, 1);
+
+      await controller.handleLifecycleStateChanged(AppLifecycleState.resumed);
+      expect(audio.resumeBgmCalls, 1);
+      expect(controller.isMusicPlaying.value, isTrue);
+    });
+
+    test('does not resume if user already turned music off', () async {
+      await controller.playOrPauseMusic();
+      final int pauseCallsAfterManualOff = audio.pauseBgmCalls;
+
+      await controller.handleLifecycleStateChanged(AppLifecycleState.paused);
+      await controller.handleLifecycleStateChanged(AppLifecycleState.resumed);
+
+      expect(audio.pauseBgmCalls, pauseCallsAfterManualOff);
+      expect(audio.resumeBgmCalls, 0);
+      expect(controller.isMusicPlaying.value, isFalse);
+    });
+
+    test('marks music stopped when lifecycle resume fails', () async {
+      audio.resumeBgmResult = false;
+
+      await controller.handleLifecycleStateChanged(AppLifecycleState.paused);
+      await controller.handleLifecycleStateChanged(AppLifecycleState.resumed);
+
+      expect(audio.resumeBgmCalls, 1);
+      expect(controller.isMusicPlaying.value, isFalse);
     });
 
     test('triggers start sfx on first start', () {

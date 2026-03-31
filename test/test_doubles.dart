@@ -47,10 +47,12 @@ class FakeAudioService implements AudioService {
   int initializeCalls = 0;
   int playBgmCalls = 0;
   int pauseBgmCalls = 0;
+  int resumeBgmCalls = 0;
   int stopBgmCalls = 0;
   int playStartSfxCalls = 0;
   int playEncouragementSfxCalls = 0;
   bool playBgmResult = true;
+  bool resumeBgmResult = true;
   bool playStartSfxResult = true;
   bool playEncouragementSfxResult = true;
   int? lastTrackIndex;
@@ -81,8 +83,9 @@ class FakeAudioService implements AudioService {
 
   @override
   Future<bool> resumeBgm({required double volume}) async {
+    resumeBgmCalls += 1;
     lastVolume = volume;
-    return playBgmResult;
+    return resumeBgmResult;
   }
 
   @override

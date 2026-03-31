@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mvp_app/app_controller.dart';
 import 'package:mvp_app/ui_widgets.dart';
@@ -41,7 +43,22 @@ class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    controller.handleLifecycleStateChanged(state);
+    unawaited(controller.handleLifecycleStateChanged(state));
+
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+
+    unawaited(_resumePomodoroTimeline());
+  }
+
+  Future<void> _resumePomodoroTimeline() async {
+    await _initialization;
+    if (!mounted) {
+      return;
+    }
+
+    await controller.synchronizeWithCurrentTime();
   }
 
   @override
@@ -56,10 +73,11 @@ class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
     return FutureBuilder<void>(
       future: _initialization,
       builder: (context, snapshot) {
+        final Widget content;
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          content = const Center(child: CircularProgressIndicator());
+        } else {
+          content = UIWidgets(controller: controller);
         }
 
         return Scaffold(
@@ -70,7 +88,7 @@ class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
                 fit: BoxFit.cover,
               ),
             ),
-            child: UIWidgets(controller: controller),
+            child: content,
           ),
         );
       },

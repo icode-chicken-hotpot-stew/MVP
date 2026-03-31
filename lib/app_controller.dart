@@ -216,7 +216,6 @@ class AppController {
   Timer? _ticker;
   DateTime? _phaseStartedAt;
   int _phaseDurationSeconds = kDefaultPomodoroSeconds;
-  Future<bool>? _persisting;
   String? _activeSupervisorSessionId;
   DateTime? _lastBackgroundAt;
   bool _stage3mSent = false;
@@ -307,6 +306,13 @@ class AppController {
     }
   }
 
+  Future<void> synchronizeWithCurrentTime() async {
+    final _PomodoroSnapshot? snapshot = _syncRunningState(_now());
+    if (snapshot != null) {
+      await _persistSnapshot(snapshot);
+    }
+  }
+
   void toggleTimer() {
     if (phaseStatus.value == PomodoroPhaseStatus.running) {
       pauseTimer();
@@ -369,8 +375,16 @@ class AppController {
     unawaited(_cancelSupervisorSession(clearState: true));
   }
 
+  void restoreDefaultDurations() {
+    updateFocusDuration(kDefaultPomodoroSeconds);
+    updateRestDuration(kDefaultRestSeconds);
+  }
+
   void updateFocusDuration(int seconds) {
     if (!_isValidDuration(seconds)) {
+      return;
+    }
+    if (focusDurationSeconds.value == seconds) {
       return;
     }
 
@@ -388,6 +402,9 @@ class AppController {
     if (!_isValidDuration(seconds)) {
       return;
     }
+    if (restDurationSeconds.value == seconds) {
+      return;
+    }
 
     restDurationSeconds.value = seconds;
     unawaited(_persistSnapshot(_currentSnapshot()));
@@ -398,13 +415,16 @@ class AppController {
     if (count != sanitized) {
       return;
     }
+    if (cycleCount.value == sanitized) {
+      return;
+    }
 
     cycleCount.value = sanitized;
     unawaited(_persistSnapshot(_currentSnapshot()));
   }
 
   void fetchHistoryData() {
-    // TODO: implement history fetch logic
+    // 历史统计契约不在当前批次范围内，这里保留给 UI 的兼容入口。
   }
 
   Future<void> handleLifecycleStateChanged(AppLifecycleState state) async {
@@ -609,24 +629,10 @@ class AppController {
   }
 
   void _tick() {
-    if (phaseStatus.value != PomodoroPhaseStatus.running || _phaseStartedAt == null) {
-      return;
+    final _PomodoroSnapshot? snapshot = _syncRunningState(_now());
+    if (snapshot != null) {
+      unawaited(_persistSnapshot(snapshot));
     }
-
-    final DateTime now = _now();
-    final int updatedRemaining = _remainingFromStart(
-      startedAt: _phaseStartedAt!,
-      phaseDurationSeconds: _phaseDurationSeconds,
-      now: now,
-    );
-
-    if (updatedRemaining > 0) {
-      remainingSeconds.value = updatedRemaining;
-      currentDate.value = _formatCurrentDate();
-      return;
-    }
-
-    _handlePhaseCompletion(now);
   }
 
   void _syncRemainingSeconds(DateTime now) {
@@ -640,15 +646,48 @@ class AppController {
     );
   }
 
-  void _handlePhaseCompletion(DateTime now) {
+  _PomodoroSnapshot? _syncRunningState(DateTime now) {
+    currentDate.value = _formatCurrentDate();
+
+    if (phaseStatus.value != PomodoroPhaseStatus.running || _phaseStartedAt == null) {
+      return null;
+    }
+
+    final int elapsedSeconds = now.difference(_phaseStartedAt!).inSeconds;
+    if (elapsedSeconds < _phaseDurationSeconds) {
+      final int updatedRemaining = _remainingFromStart(
+        startedAt: _phaseStartedAt!,
+        phaseDurationSeconds: _phaseDurationSeconds,
+        now: now,
+      );
+      if (remainingSeconds.value != updatedRemaining) {
+        remainingSeconds.value = updatedRemaining;
+      }
+      return null;
+    }
+
     final _PhaseAdvanceResult result = _advanceSnapshotAfterElapsed(
-      snapshot: _currentSnapshot(),
-      elapsedSeconds: _currentPhaseTotalSeconds,
+      snapshot: _snapshotForTransition(),
+      elapsedSeconds: elapsedSeconds,
       now: now,
     );
     _applySnapshot(result.snapshot, startTickerIfRunning: true);
-    unawaited(_persistSnapshot(result.snapshot));
     unawaited(_applyPhaseAdvanceSideEffects(result, replayAudio: true));
+    return result.snapshot;
+  }
+
+  _PomodoroSnapshot _snapshotForTransition() {
+    return _PomodoroSnapshot(
+      pomodoroState: pomodoroState.value,
+      phaseStatus: phaseStatus.value,
+      startedAt: _phaseStartedAt,
+      phaseDurationSeconds: _currentPhaseTotalSeconds,
+      remainingSeconds: remainingSeconds.value,
+      focusDurationSeconds: focusDurationSeconds.value,
+      restDurationSeconds: restDurationSeconds.value,
+      cycleCount: cycleCount.value,
+      completedFocusCycles: completedFocusCycles.value,
+    );
   }
 
   _PhaseAdvanceResult _recoverSnapshot({
@@ -672,7 +711,18 @@ class AppController {
             ),
       remainingSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
-          : _sanitizeDurationOrDefault(snapshot.remainingSeconds, focusSeconds),
+          : _sanitizeRemainingSeconds(
+              seconds: snapshot.remainingSeconds,
+              phaseDurationSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
+                  ? focusSeconds
+                  : _sanitizeDurationOrDefault(
+                      snapshot.phaseDurationSeconds,
+                      snapshot.pomodoroState == PomodoroState.studying
+                          ? focusSeconds
+                          : restSeconds,
+                    ),
+              fallback: snapshot.pomodoroState == PomodoroState.studying ? focusSeconds : restSeconds,
+            ),
       focusDurationSeconds: focusSeconds,
       restDurationSeconds: restSeconds,
       cycleCount: cycles,
@@ -883,8 +933,7 @@ class AppController {
 
   Future<void> _persistSnapshot(_PomodoroSnapshot snapshot) async {
     final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
-    _persisting = prefs.setString(_kPomodoroSnapshotKey, jsonEncode(snapshot.toJson()));
-    await _persisting;
+    await prefs.setString(_kPomodoroSnapshotKey, jsonEncode(snapshot.toJson()));
   }
 
   Future<void> _restoreXpState() async {
@@ -1034,6 +1083,20 @@ class AppController {
 
   int _sanitizeDurationOrDefault(int seconds, int fallback) {
     return _isValidDuration(seconds) ? seconds : fallback;
+  }
+
+  int _sanitizeRemainingSeconds({
+    required int seconds,
+    required int phaseDurationSeconds,
+    required int fallback,
+  }) {
+    if (!_isValidDuration(seconds)) {
+      return fallback;
+    }
+    if (seconds > phaseDurationSeconds) {
+      return phaseDurationSeconds;
+    }
+    return seconds;
   }
 
   int? _sanitizeCycleCount(int? count) {

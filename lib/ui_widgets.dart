@@ -27,7 +27,8 @@ class _UIWidgetsState extends State<UIWidgets> {
   final TextEditingController _restMinutesController = TextEditingController();
   final TextEditingController _cycleCountController = TextEditingController();
 
-  bool get _isTimerRunning => widget.controller.isActive.value;
+  PomodoroPhaseStatus get _phaseStatus => widget.controller.phaseStatus.value;
+  bool get _isTimerRunning => _phaseStatus == PomodoroPhaseStatus.running;
 
   @override
   void dispose() {
@@ -94,6 +95,21 @@ class _UIWidgetsState extends State<UIWidgets> {
     });
   }
 
+  String _formatTime(int seconds) {
+    final int safeSeconds = seconds < 0 ? 0 : seconds;
+    final int totalHours = safeSeconds ~/ 3600;
+    final int totalMinutes = (safeSeconds % 3600) ~/ 60;
+    final String minutesText = totalMinutes.toString().padLeft(2, '0');
+    final String secondsText = (safeSeconds % 60).toString().padLeft(2, '0');
+
+    if (totalHours <= 0) {
+      final String shortMinutesText = (safeSeconds ~/ 60).toString().padLeft(2, '0');
+      return '$shortMinutesText:$secondsText';
+    }
+
+    return '$totalHours:$minutesText:$secondsText';
+  }
+
   void _savePomodoroConfig() {
     if (_isTimerRunning) {
       _closePomodoroConfig();
@@ -118,6 +134,18 @@ class _UIWidgetsState extends State<UIWidgets> {
     _closePomodoroConfig();
   }
 
+  void _restorePomodoroDefaults() {
+    if (_isTimerRunning) {
+      return;
+    }
+
+    widget.controller.restoreDefaultDurations();
+    _focusMinutesController.text =
+        (widget.controller.focusDurationSeconds.value ~/ 60).toString();
+    _restMinutesController.text =
+        (widget.controller.restDurationSeconds.value ~/ 60).toString();
+  }
+
   void _closeAllPanels() {
     setState(() {
       _isTomatoExpanded = false;
@@ -128,10 +156,10 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 
   Widget _buildCharacterStage(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: widget.controller.isActive,
-      builder: (context, active, _) {
-        return CharacterView(isActive: active);
+    return ValueListenableBuilder<PomodoroState>(
+      valueListenable: widget.controller.pomodoroState,
+      builder: (context, state, _) {
+        return CharacterView(isActive: state == PomodoroState.studying);
       },
     );
   }
@@ -255,10 +283,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                         ValueListenableBuilder<int>(
                           valueListenable: widget.controller.remainingSeconds,
                           builder: (BuildContext context, int seconds, Widget? child) {
-                            final String time =
-                                '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
                             return Text(
-                              time,
+                              _formatTime(seconds),
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -406,6 +432,20 @@ class _UIWidgetsState extends State<UIWidgets> {
                                       ),
                                     ),
                                     const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton(
+                                        onPressed: _restorePomodoroDefaults,
+                                        child: const Text(
+                                          '恢复默认时间（25/5）',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF5D4037),
+                                            fontFamily: 'ZCOOLKuaiLe-Regular',
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [

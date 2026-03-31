@@ -441,6 +441,18 @@
         const SMILE_MOTION_DURATION_MS = 2030;
         const TALK_MOTION_DURATION_MS = 2030;
 
+        function resolveModelAssetUrl(relativePath) {
+            return new URL(String(relativePath || ''), document.baseURI).toString();
+        }
+
+        function toAbsoluteModelPath(path) {
+            const raw = String(path || '');
+            if (!raw || raw.startsWith('http') || raw.startsWith('data:') || raw.startsWith('blob:')) {
+                return raw;
+            }
+            return resolveModelAssetUrl(raw);
+        }
+
         function resolveMotionGroupName(group) {
             const raw = String(group || '');
             const key = raw.toLowerCase();
@@ -619,18 +631,20 @@
             console.log('[Preload] Using Flutter-injected textures...');
 
             if (!window._preloadedTextures) {
-                throw new Error('No preloaded textures from Flutter!');
+                console.warn('[Preload] No preloaded textures object from Flutter, fallback to runtime loading');
+                return;
             }
 
             const textureEntries = Object.entries(window._preloadedTextures)
                 .filter(([_, dataUrl]) => typeof dataUrl === 'string' && dataUrl.startsWith('data:image'));
 
             if (textureEntries.length === 0) {
-                throw new Error('No valid preloaded textures');
+                console.warn('[Preload] No valid preloaded textures, fallback to runtime loading');
+                return;
             }
 
             for (const [textureKey, dataUrl] of textureEntries) {
-                const url = `https://appassets.androidplatform.net/assets/live2d/hiyori_pro/hiyori_movie_pro_t03.4096/${textureKey}.png`;
+                const url = resolveModelAssetUrl(`hiyori_movie_pro_t03.4096/${textureKey}.png`);
 
                 console.log('[Preload] Loading', textureKey, 'from data URL...');
 
@@ -651,14 +665,11 @@
 
                 // Register in PIXI Assets cache with all possible URL formats
                 PIXI.Assets.cache.set(url, texture);
-                // Also register relative path variations
-                const relativePath = url.split('/assets/live2d/hiyori_pro/')[1];
-                if (relativePath) {
-                    PIXI.Assets.cache.set(relativePath, texture);
-                    const fileName = relativePath.split('/').pop();
-                    PIXI.Assets.cache.set(fileName, texture);
-                    PIXI.Assets.cache.set('hiyori_movie_pro_t03.4096/' + fileName, texture);
-                }
+                // Also register relative path and file-name variations.
+                const fileName = `${textureKey}.png`;
+                const relativePath = `hiyori_movie_pro_t03.4096/${fileName}`;
+                PIXI.Assets.cache.set(relativePath, texture);
+                PIXI.Assets.cache.set(fileName, texture);
 
                 console.log('[Preload] Texture registered:', url);
             }
@@ -748,8 +759,7 @@
                 updateStatus('Creating Live2D model...');
 
                 // Pre-load model JSON, inject textures, then load from blob URL
-                const modelUrl = 'https://appassets.androidplatform.net/assets/live2d/hiyori_pro/hiyori_movie_pro_t03.model3.json';
-                const modelBaseUrl = 'https://appassets.androidplatform.net/assets/live2d/hiyori_pro/';
+                const modelUrl = resolveModelAssetUrl('hiyori_movie_pro_t03.model3.json');
                 updateStatus(`Loading model: ${modelUrl}`);
 
                 try {
@@ -767,16 +777,25 @@
                         modelJson.FileReferences.Textures = textures.map((t) => {
                             const fileName = String(t || '').split('/').pop();
                             const key = fileName?.replace('.png', '') || '';
-                            return window._preloadedTextures[key] || (modelBaseUrl + t);
+                            return window._preloadedTextures[key] || toAbsoluteModelPath(t);
                         });
                     }
 
                     // Convert all relative paths to absolute URLs
-                    ['Moc', 'Pose', 'UserData', 'Physics'].forEach(key => {
-                        if (modelJson?.FileReferences?.[key] && !modelJson.FileReferences[key].startsWith('http')) {
-                            modelJson.FileReferences[key] = modelBaseUrl + modelJson.FileReferences[key];
+                    ['Moc', 'Pose', 'UserData', 'Physics', 'DisplayInfo'].forEach(key => {
+                        if (modelJson?.FileReferences?.[key]) {
+                            modelJson.FileReferences[key] = toAbsoluteModelPath(modelJson.FileReferences[key]);
                         }
                     });
+
+                    if (Array.isArray(modelJson?.FileReferences?.Expressions)) {
+                        modelJson.FileReferences.Expressions = modelJson.FileReferences.Expressions.map((expr) => {
+                            if (expr?.File) {
+                                return { ...expr, File: toAbsoluteModelPath(expr.File) };
+                            }
+                            return expr;
+                        });
+                    }
 
                     // Handle motions
                     if (modelJson?.FileReferences?.Motions) {
@@ -798,7 +817,7 @@
                                 }
 
                                 const original = motion.File;
-                                const absoluteUrl = original.startsWith('http') ? original : (modelBaseUrl + original);
+                                const absoluteUrl = toAbsoluteModelPath(original);
 
                                 // Android WebView 对 blob: motion URL 存在拦截问题，
                                 // 这里保持为 appassets 绝对路径，并做一次预读验证可达性。

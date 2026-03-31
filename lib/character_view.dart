@@ -1,5 +1,4 @@
 // 角色显示模块 - 负责 Live2D 角色动画和交互
-library character_view;
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -211,18 +210,34 @@ class _CharacterViewState extends State<CharacterView> {
 
     // 预加载纹理并生成 base64，直接嵌入 HTML 占位符，确保脚本执行前即可使用
     Map<String, String> preloadedTextures = {};
-    try {
-      for (int i = 0; i < widget.texturePaths.length; i++) {
-        final texturePath = widget.texturePaths[i];
-        final data = await rootBundle.load('assets/$texturePath');
-        final base64 = base64Encode(data.buffer.asUint8List());
-        
-        // 从路径获取纹理键名（例如 texture_00）
-        final fileName = texturePath.split('/').last.replaceAll('.png', '');
-        preloadedTextures[fileName] = 'data:image/png;base64,$base64';
+    for (int i = 0; i < widget.texturePaths.length; i++) {
+      final texturePath = widget.texturePaths[i];
+      final candidates = <String>{
+        'assets/$texturePath',
+        texturePath,
+      };
+
+      ByteData? data;
+      for (final candidate in candidates) {
+        try {
+          data = await rootBundle.load(candidate);
+          debugPrint('[CharacterView] Preloaded texture from: $candidate');
+          break;
+        } catch (_) {
+          // Try next candidate path.
+        }
       }
-    } catch (e) {
-      debugPrint('[CharacterView] Failed to preload textures: $e');
+
+      if (data == null) {
+        debugPrint('[CharacterView] Failed to preload texture: $texturePath');
+        continue;
+      }
+
+      final base64 = base64Encode(data.buffer.asUint8List());
+
+      // 从路径获取纹理键名（例如 texture_00）
+      final fileName = texturePath.split('/').last.replaceAll('.png', '');
+      preloadedTextures[fileName] = 'data:image/png;base64,$base64';
     }
 
     // 将JS内容内联到HTML中,替换script标签

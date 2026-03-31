@@ -95,9 +95,17 @@ class _UIWidgetsState extends State<UIWidgets> {
 
   String _formatTime(int seconds) {
     final int safeSeconds = seconds < 0 ? 0 : seconds;
-    final String minutesText = (safeSeconds ~/ 60).toString().padLeft(2, '0');
+    final int totalHours = safeSeconds ~/ 3600;
+    final int totalMinutes = (safeSeconds % 3600) ~/ 60;
+    final String minutesText = totalMinutes.toString().padLeft(2, '0');
     final String secondsText = (safeSeconds % 60).toString().padLeft(2, '0');
-    return '$minutesText:$secondsText';
+
+    if (totalHours <= 0) {
+      final String shortMinutesText = (safeSeconds ~/ 60).toString().padLeft(2, '0');
+      return '$shortMinutesText:$secondsText';
+    }
+
+    return '$totalHours:$minutesText:$secondsText';
   }
 
   String _buildPhaseLabel() {
@@ -158,6 +166,18 @@ class _UIWidgetsState extends State<UIWidgets> {
     );
 
     _closePomodoroConfig();
+  }
+
+  void _restorePomodoroDefaults() {
+    if (_isTimerRunning) {
+      return;
+    }
+
+    widget.controller.restoreDefaultDurations();
+    _focusMinutesController.text =
+        (widget.controller.focusDurationSeconds.value ~/ 60).toString();
+    _restMinutesController.text =
+        (widget.controller.restDurationSeconds.value ~/ 60).toString();
   }
 
   // ===============================
@@ -648,6 +668,20 @@ class _UIWidgetsState extends State<UIWidgets> {
                                       ],
                                     ),
                                     const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton(
+                                        onPressed: _restorePomodoroDefaults,
+                                        child: const Text(
+                                          '恢复默认时间（25/5）',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF5D4037),
+                                            fontFamily: 'ZCOOLKuaiLe-Regular',
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                     Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.spaceBetween,

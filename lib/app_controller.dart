@@ -261,6 +261,11 @@ class AppController {
     unawaited(_persistSnapshot(snapshot));
   }
 
+  void restoreDefaultDurations() {
+    updateFocusDuration(kDefaultPomodoroSeconds);
+    updateRestDuration(kDefaultRestSeconds);
+  }
+
   void updateFocusDuration(int seconds) {
     if (!_isValidDuration(seconds)) {
       return;

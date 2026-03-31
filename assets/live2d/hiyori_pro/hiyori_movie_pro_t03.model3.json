@@ -1,0 +1,72 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "hiyori_movie_pro_t03.moc3",
+		"Textures": [
+			"hiyori_movie_pro_t03.4096/texture_00.png"
+		],
+		"Physics": "hiyori_movie_pro_t03.physics3.json",
+		"DisplayInfo": "hiyori_movie_pro_t03.cdi3.json",
+		"Motions": {
+			"Start": [
+				{
+					"File": "motion/start.json",
+					"FadeInTime": 1.0,
+					"FadeOutTime": 1.0
+				}
+			],
+			"Study": [
+				{
+					"File": "motion/study.json",
+					"FadeInTime": 1.1,
+					"FadeOutTime": 0.8
+				}
+			],
+			"Smile": [
+				{
+					"File": "motion/smile.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Talk": [
+				{
+					"File": "motion/talk.son",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Angry": [
+				{
+					"File": "motion/angry.json",
+					"FadeInTime": 0.3,
+					"FadeOutTime": 0.5
+				}
+			],
+			"Normal": [
+				{
+					"File": "motion/normal.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				}
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeLOpen",
+				"ParamEyeROpen"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": [
+				"ParamMouthOpenY"
+			]
+		}
+	]
+}

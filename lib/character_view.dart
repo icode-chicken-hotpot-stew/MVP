@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
-const double kCharacterHorizontalOffset = 0.0;
-const double kCharacterVerticalOffset = 360.0;
+const double kCharacterHorizontalOffset = 100.0;
+const double kCharacterVerticalOffset = 320.0;
 
 /// Live2D 角色显示组件
 /// 负责：
@@ -38,10 +38,9 @@ class CharacterView extends StatefulWidget {
     super.key,
     this.isActive = false,
     this.texturePaths = const [
-      'live2d/hiyori/Hiyori.2048/texture_00.png',
-      'live2d/hiyori/Hiyori.2048/texture_01.png',
+      'live2d/hiyori_pro/hiyori_movie_pro_t03.4096/texture_00.png',
     ],
-    this.modelBasePath = 'live2d/hiyori/',
+    this.modelBasePath = 'live2d/hiyori_pro/',
     this.horizontalOffset,
     this.verticalOffset,
   });

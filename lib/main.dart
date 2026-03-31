@@ -42,6 +42,9 @@ class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    unawaited(controller.handleLifecycleStateChanged(state));
+
     if (state != AppLifecycleState.resumed) {
       return;
     }

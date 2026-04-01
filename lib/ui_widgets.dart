@@ -14,6 +14,9 @@ class UIWidgets extends StatefulWidget {
 }
 
 class _UIWidgetsState extends State<UIWidgets> {
+  static const String _stageBackgroundAsset = 'assets/background_back.png';
+  static const String _stageForegroundAsset = 'assets/background_front.png';
+
   bool _isTomatoExpanded = false;
   bool _isStatsExpanded = false;
   bool _isExpExpanded = false;
@@ -184,6 +187,18 @@ class _UIWidgetsState extends State<UIWidgets> {
     );
   }
 
+  Widget _buildStageBackground() {
+    return const IgnorePointer(
+      child: Image(image: AssetImage(_stageBackgroundAsset), fit: BoxFit.cover),
+    );
+  }
+
+  Widget _buildStageForeground() {
+    return const IgnorePointer(
+      child: Image(image: AssetImage(_stageForegroundAsset), fit: BoxFit.cover),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -193,7 +208,9 @@ class _UIWidgetsState extends State<UIWidgets> {
         onTap: _closeAllPanels,
         child: Stack(
           children: [
+            Positioned.fill(child: _buildStageBackground()),
             Positioned.fill(child: _buildCharacterStage(context)),
+            Positioned.fill(child: _buildStageForeground()),
             Positioned(
               bottom: 120,
               right: 40,

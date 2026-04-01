@@ -6,6 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+const double kCharacterHorizontalOffset = 100.0;
+const double kCharacterVerticalOffset = 320.0;
+
 /// Live2D 角色显示组件
 /// 负责：
 /// - WebView 初始化和管理
@@ -14,23 +17,31 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 class CharacterView extends StatefulWidget {
   /// 是否正在计时（用于扩展：active 时播放动作，idle 时播放待机）
   final bool isActive;
-
+  
   /// 纹理文件路径列表（相对于 assets 目录）
   /// 默认为 Hiyori 模型的纹理：texture_00.png, texture_01.png
   final List<String> texturePaths;
-
+  
   /// 模型基础路径（相对于 assets 目录）
   /// 默认为 'live2d/hiyori/'
   final String modelBasePath;
+
+  /// Flutter 层整体横向位移（像素）。负值向左，正值向右。
+  final double? horizontalOffset;
+
+  /// Flutter 层整体纵向位移（像素）。
+  /// 该位移作用在整个 WebView 上，不受 HTML 内部动画坐标影响。
+  final double? verticalOffset;
 
   const CharacterView({
     super.key,
     this.isActive = false,
     this.texturePaths = const [
-      'live2d/hiyori/Hiyori.2048/texture_00.png',
-      'live2d/hiyori/Hiyori.2048/texture_01.png',
+      'live2d/hiyori_pro/hiyori_movie_pro_t03.4096/texture_00.png',
     ],
-    this.modelBasePath = 'live2d/hiyori/',
+    this.modelBasePath = 'live2d/hiyori_pro/',
+    this.horizontalOffset,
+    this.verticalOffset,
   });
 
   @override
@@ -39,11 +50,70 @@ class CharacterView extends StatefulWidget {
 
 class _CharacterViewState extends State<CharacterView> {
   late final WebViewController _controller;
+  bool _pageReady = false;
+  String? _lastMotionState;
+  String? _lastViewportOffsetState;
 
   @override
   void initState() {
     super.initState();
     _initializeWebView();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    // Hot reload does not necessarily trigger didUpdateWidget; force-sync offsets.
+    _syncViewportOffset(force: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant CharacterView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) {
+      _syncMotionState();
+    }
+    if (oldWidget.horizontalOffset != widget.horizontalOffset ||
+        oldWidget.verticalOffset != widget.verticalOffset) {
+      _syncViewportOffset();
+    }
+  }
+
+  Future<void> _syncMotionState({bool force = false}) async {
+    if (!_pageReady) return;
+
+    final nextState = widget.isActive ? 'study' : 'normal';
+    if (!force && _lastMotionState == nextState) return;
+
+    try {
+      final stateJson = jsonEncode(nextState);
+      await _controller.runJavaScript(
+        'if (window.setCharacterState) { window.setCharacterState($stateJson); }',
+      );
+      _lastMotionState = nextState;
+      debugPrint('[CharacterView] synced motion state -> $nextState');
+    } catch (e) {
+      debugPrint('[CharacterView] failed to sync motion state: $e');
+    }
+  }
+
+  Future<void> _syncViewportOffset({bool force = false}) async {
+    if (!_pageReady) return;
+
+    final x = widget.horizontalOffset ?? kCharacterHorizontalOffset;
+    final y = widget.verticalOffset ?? kCharacterVerticalOffset;
+    final nextState = '$x|$y';
+    if (!force && _lastViewportOffsetState == nextState) return;
+
+    try {
+      await _controller.runJavaScript(
+        'if (window.setViewportOffset) { window.setViewportOffset(${x.toStringAsFixed(2)}, ${y.toStringAsFixed(2)}); }',
+      );
+      _lastViewportOffsetState = nextState;
+      debugPrint('[CharacterView] synced viewport offset -> x=$x, y=$y');
+    } catch (e) {
+      debugPrint('[CharacterView] failed to sync viewport offset: $e');
+    }
   }
 
   Future<void> _initializeWebView() async {
@@ -55,9 +125,7 @@ class _CharacterViewState extends State<CharacterView> {
       final androidController = controller.platform as AndroidWebViewController;
       androidController.setMediaPlaybackRequiresUserGesture(false);
       // 设置 WebView 透明背景
-      androidController.setBackgroundColor(
-        const Color(0x00000000),
-      ); // ARGB: 00=透明, 000000=黑色
+      androidController.setBackgroundColor(const Color(0x00000000)); // ARGB: 00=透明, 000000=黑色
     }
 
     _controller = controller
@@ -126,7 +194,13 @@ class _CharacterViewState extends State<CharacterView> {
         },
       )
       ..setNavigationDelegate(
-        NavigationDelegate(onPageFinished: (String url) {}),
+        NavigationDelegate(
+          onPageFinished: (String url) {
+            _pageReady = true;
+            _syncMotionState(force: true);
+            _syncViewportOffset(force: true);
+          },
+        ),
       );
 
     // 读取所有文件内容
@@ -136,18 +210,34 @@ class _CharacterViewState extends State<CharacterView> {
 
     // 预加载纹理并生成 base64，直接嵌入 HTML 占位符，确保脚本执行前即可使用
     Map<String, String> preloadedTextures = {};
-    try {
-      for (int i = 0; i < widget.texturePaths.length; i++) {
-        final texturePath = widget.texturePaths[i];
-        final data = await rootBundle.load('assets/$texturePath');
-        final base64 = base64Encode(data.buffer.asUint8List());
+    for (int i = 0; i < widget.texturePaths.length; i++) {
+      final texturePath = widget.texturePaths[i];
+      final candidates = <String>{
+        'assets/$texturePath',
+        texturePath,
+      };
 
-        // 从路径获取纹理键名（例如 texture_00）
-        final fileName = texturePath.split('/').last.replaceAll('.png', '');
-        preloadedTextures[fileName] = 'data:image/png;base64,$base64';
+      ByteData? data;
+      for (final candidate in candidates) {
+        try {
+          data = await rootBundle.load(candidate);
+          debugPrint('[CharacterView] Preloaded texture from: $candidate');
+          break;
+        } catch (_) {
+          // Try next candidate path.
+        }
       }
-    } catch (e) {
-      debugPrint('[CharacterView] Failed to preload textures: $e');
+
+      if (data == null) {
+        debugPrint('[CharacterView] Failed to preload texture: $texturePath');
+        continue;
+      }
+
+      final base64 = base64Encode(data.buffer.asUint8List());
+
+      // 从路径获取纹理键名（例如 texture_00）
+      final fileName = texturePath.split('/').last.replaceAll('.png', '');
+      preloadedTextures[fileName] = 'data:image/png;base64,$base64';
     }
 
     // 将JS内容内联到HTML中,替换script标签
@@ -185,8 +275,7 @@ class _CharacterViewState extends State<CharacterView> {
 
     await _controller.loadHtmlString(
       modifiedHtml,
-      baseUrl:
-          'https://appassets.androidplatform.net/assets/${widget.modelBasePath}',
+      baseUrl: 'https://appassets.androidplatform.net/assets/${widget.modelBasePath}',
     );
   }
 

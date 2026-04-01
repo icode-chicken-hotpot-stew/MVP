@@ -43,7 +43,10 @@ class _UIWidgetsState extends State<UIWidgets> {
     if (total <= 0) {
       return 0;
     }
-    final int remaining = widget.controller.remainingSeconds.value.clamp(0, total);
+    final int remaining = widget.controller.remainingSeconds.value.clamp(
+      0,
+      total,
+    );
     return (1 - (remaining / total)).clamp(0.0, 1.0);
   }
 
@@ -61,12 +64,18 @@ class _UIWidgetsState extends State<UIWidgets> {
       _cycleCountController.text =
           widget.controller.cycleCount.value?.toString() ?? '';
     });
+    unawaited(widget.controller.triggerUiOpenSfx());
   }
 
   void _closePomodoroConfig() {
+    if (!_isPomodoroConfigOpen) {
+      return;
+    }
+
     setState(() {
       _isPomodoroConfigOpen = false;
     });
+    unawaited(widget.controller.triggerUiBackSfx());
   }
 
   void _triggerScaleAnimation(String type) {
@@ -103,7 +112,10 @@ class _UIWidgetsState extends State<UIWidgets> {
     final String secondsText = (safeSeconds % 60).toString().padLeft(2, '0');
 
     if (totalHours <= 0) {
-      final String shortMinutesText = (safeSeconds ~/ 60).toString().padLeft(2, '0');
+      final String shortMinutesText = (safeSeconds ~/ 60).toString().padLeft(
+        2,
+        '0',
+      );
       return '$shortMinutesText:$secondsText';
     }
 
@@ -147,12 +159,20 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 
   void _closeAllPanels() {
+    final bool hasOpenPanels =
+        _isTomatoExpanded ||
+        _isStatsExpanded ||
+        _isExpExpanded ||
+        _isPomodoroConfigOpen;
     setState(() {
       _isTomatoExpanded = false;
       _isStatsExpanded = false;
       _isExpExpanded = false;
       _isPomodoroConfigOpen = false;
     });
+    if (hasOpenPanels) {
+      unawaited(widget.controller.triggerUiBackSfx());
+    }
   }
 
   Widget _buildCharacterStage(BuildContext context) {
@@ -209,15 +229,21 @@ class _UIWidgetsState extends State<UIWidgets> {
           children: [
             GestureDetector(
               onTap: () {
+                final bool nextTomatoExpanded = !_isTomatoExpanded;
                 _triggerScaleAnimation('tomato');
                 setState(() {
-                  _isTomatoExpanded = !_isTomatoExpanded;
+                  _isTomatoExpanded = nextTomatoExpanded;
                   if (_isTomatoExpanded) {
                     _isStatsExpanded = false;
                     _isExpExpanded = false;
                     _isPomodoroConfigOpen = false;
                   }
                 });
+                if (nextTomatoExpanded) {
+                  unawaited(widget.controller.triggerUiOpenSfx());
+                } else {
+                  unawaited(widget.controller.triggerUiBackSfx());
+                }
               },
               child: AnimatedScale(
                 scale: _isTomatoScaling ? 0.9 : 1.0,
@@ -274,7 +300,12 @@ class _UIWidgetsState extends State<UIWidgets> {
                               child: CircularProgressIndicator(
                                 value: _currentProgress,
                                 color: const Color.fromARGB(255, 204, 196, 195),
-                                backgroundColor: const Color.fromARGB(255, 179, 22, 22),
+                                backgroundColor: const Color.fromARGB(
+                                  255,
+                                  179,
+                                  22,
+                                  22,
+                                ),
                                 strokeWidth: 6,
                               ),
                             );
@@ -282,17 +313,22 @@ class _UIWidgetsState extends State<UIWidgets> {
                         ),
                         ValueListenableBuilder<int>(
                           valueListenable: widget.controller.remainingSeconds,
-                          builder: (BuildContext context, int seconds, Widget? child) {
-                            return Text(
-                              _formatTime(seconds),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF5D4037),
-                                fontFamily: 'ZCOOLKuaiLe-Regular',
-                              ),
-                            );
-                          },
+                          builder:
+                              (
+                                BuildContext context,
+                                int seconds,
+                                Widget? child,
+                              ) {
+                                return Text(
+                                  _formatTime(seconds),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF5D4037),
+                                    fontFamily: 'ZCOOLKuaiLe-Regular',
+                                  ),
+                                );
+                              },
                         ),
                       ],
                     ),
@@ -324,7 +360,9 @@ class _UIWidgetsState extends State<UIWidgets> {
                         IconButton(
                           icon: const Icon(Icons.edit),
                           color: const Color(0xFF5D4037),
-                          onPressed: _isTimerRunning ? null : _openPomodoroConfig,
+                          onPressed: _isTimerRunning
+                              ? null
+                              : _openPomodoroConfig,
                         ),
                       ],
                     ),
@@ -352,7 +390,11 @@ class _UIWidgetsState extends State<UIWidgets> {
                 border: Border.all(color: const Color(0xFF795548), width: 1),
                 borderRadius: BorderRadius.circular(8),
                 boxShadow: const [
-                  BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2)),
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
                 ],
               ),
               child: Material(
@@ -447,7 +489,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                                       ),
                                     ),
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         TextButton(
                                           onPressed: _closePomodoroConfig,
@@ -506,14 +549,20 @@ class _UIWidgetsState extends State<UIWidgets> {
       children: [
         GestureDetector(
           onTap: () {
+            final bool nextExpExpanded = !_isExpExpanded;
             _triggerScaleAnimation('exp');
             setState(() {
-              _isExpExpanded = !_isExpExpanded;
+              _isExpExpanded = nextExpExpanded;
               if (_isExpExpanded) {
                 _isTomatoExpanded = false;
                 _isStatsExpanded = false;
               }
             });
+            if (nextExpExpanded) {
+              unawaited(widget.controller.triggerUiOpenSfx());
+            } else {
+              unawaited(widget.controller.triggerUiBackSfx());
+            }
           },
           child: AnimatedScale(
             scale: _isExpScaling ? 0.9 : 1.0,
@@ -555,7 +604,10 @@ class _UIWidgetsState extends State<UIWidgets> {
           child: SingleChildScrollView(
             physics: const NeverScrollableScrollPhysics(),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 30.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12.0,
+                vertical: 30.0,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -610,14 +662,20 @@ class _UIWidgetsState extends State<UIWidgets> {
       children: [
         GestureDetector(
           onTap: () {
+            final bool nextStatsExpanded = !_isStatsExpanded;
             _triggerScaleAnimation('stats');
             setState(() {
-              _isStatsExpanded = !_isStatsExpanded;
+              _isStatsExpanded = nextStatsExpanded;
               if (_isStatsExpanded) {
                 _isTomatoExpanded = false;
                 _isExpExpanded = false;
               }
             });
+            if (nextStatsExpanded) {
+              unawaited(widget.controller.triggerUiOpenSfx());
+            } else {
+              unawaited(widget.controller.triggerUiBackSfx());
+            }
             if (_isStatsExpanded) {
               widget.controller.fetchHistoryData();
             }
@@ -681,7 +739,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                                   fontSize: 19,
                                   fontFamily: 'ZhuoKai',
                                   shadows: const [
-                                    BoxShadow(color: Colors.white38, blurRadius: 3),
+                                    BoxShadow(
+                                      color: Colors.white38,
+                                      blurRadius: 3,
+                                    ),
                                   ],
                                 ),
                               );
@@ -698,7 +759,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                                   fontSize: 19,
                                   fontFamily: 'ZhuoKai',
                                   shadows: const [
-                                    BoxShadow(color: Colors.white38, blurRadius: 3),
+                                    BoxShadow(
+                                      color: Colors.white38,
+                                      blurRadius: 3,
+                                    ),
                                   ],
                                 ),
                               );
@@ -724,7 +788,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                                 fontSize: 15,
                                 fontFamily: 'ZhuoKai',
                                 shadows: const [
-                                  BoxShadow(color: Colors.white38, blurRadius: 2),
+                                  BoxShadow(
+                                    color: Colors.white38,
+                                    blurRadius: 2,
+                                  ),
                                 ],
                               ),
                             ),
@@ -734,7 +801,9 @@ class _UIWidgetsState extends State<UIWidgets> {
                               height: 35,
                               decoration: const BoxDecoration(
                                 image: DecorationImage(
-                                  image: AssetImage('assets/images/eraser_btn.png'),
+                                  image: AssetImage(
+                                    'assets/images/eraser_btn.png',
+                                  ),
                                   fit: BoxFit.fill,
                                 ),
                               ),
@@ -767,7 +836,11 @@ class _UIWidgetsState extends State<UIWidgets> {
             ),
             borderRadius: BorderRadius.circular(30),
             boxShadow: const [
-              BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 5)),
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 10,
+                offset: Offset(0, 5),
+              ),
             ],
           ),
           child: Row(
@@ -832,6 +905,7 @@ class _UIWidgetsState extends State<UIWidgets> {
 }
 
 void _showShareCard(BuildContext context, AppController controller) {
+  unawaited(controller.triggerUiOpenSfx());
   final int seconds = controller.remainingSeconds.value;
   final double hours = (25 * 60 - seconds) / 3600.0;
   showDialog(
@@ -847,12 +921,18 @@ void _showShareCard(BuildContext context, AppController controller) {
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          const Text('（此处为分享卡片占位）', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          const Text(
+            '（此处为分享卡片占位）',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
         ],
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(ctx).pop(),
+          onPressed: () {
+            unawaited(controller.triggerUiBackSfx());
+            Navigator.of(ctx).pop();
+          },
           child: const Text('收下', style: TextStyle(color: Colors.brown)),
         ),
       ],
@@ -865,7 +945,12 @@ class ChatBubble extends StatefulWidget {
   final VoidCallback onNext;
   final VoidCallback onSkip;
 
-  const ChatBubble({super.key, required this.text, required this.onNext, required this.onSkip});
+  const ChatBubble({
+    super.key,
+    required this.text,
+    required this.onNext,
+    required this.onSkip,
+  });
 
   @override
   State<ChatBubble> createState() => _ChatBubbleState();
@@ -934,7 +1019,11 @@ class _ChatBubbleState extends State<ChatBubble> {
           color: const Color(0xFFFFFDF8),
           borderRadius: BorderRadius.circular(20),
           boxShadow: const [
-            BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 5)),
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 10,
+              offset: Offset(0, 5),
+            ),
           ],
         ),
         child: Stack(

@@ -25,6 +25,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/background_back.png
+    - assets/background_front.png
     - assets/background.webp
     - assets/images/
     - assets/music/

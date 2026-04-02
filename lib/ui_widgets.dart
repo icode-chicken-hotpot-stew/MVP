@@ -54,6 +54,8 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 
   void _openPomodoroConfig() {
+    widget.controller.registerUserInteraction();
+
     if (_isTimerRunning) {
       return;
     }
@@ -75,6 +77,7 @@ class _UIWidgetsState extends State<UIWidgets> {
       return;
     }
 
+    widget.controller.registerUserInteraction();
     setState(() {
       _isPomodoroConfigOpen = false;
     });
@@ -178,11 +181,55 @@ class _UIWidgetsState extends State<UIWidgets> {
     }
   }
 
+  void _handleBlankTap() {
+    _closeAllPanels();
+
+    if (widget.controller.isTalking) {
+      widget.controller.nextDialogue();
+      return;
+    }
+
+    widget.controller.registerUserInteraction();
+  }
+
+  void _handleCharacterTap() {
+    widget.controller.registerUserInteraction();
+    unawaited(widget.controller.triggerDialogue('clicked'));
+  }
+
   Widget _buildCharacterStage(BuildContext context) {
-    return ValueListenableBuilder<PomodoroState>(
-      valueListenable: widget.controller.pomodoroState,
-      builder: (context, state, _) {
-        return CharacterView(isActive: state == PomodoroState.studying);
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        widget.controller,
+        widget.controller.pomodoroState,
+      ]),
+      builder: (context, _) {
+        return CharacterView(
+          pomodoroState: widget.controller.pomodoroState.value,
+          isTalking: widget.controller.isTalking,
+          onCharacterTap: _handleCharacterTap,
+        );
+      },
+    );
+  }
+
+  Widget _buildDialogueBubble() {
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        if (!widget.controller.isTalking) {
+          return const SizedBox.shrink();
+        }
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {},
+          child: ChatBubble(
+            text: widget.controller.currentDialogue,
+            onNext: widget.controller.nextDialogue,
+            onSkip: widget.controller.skipDialogue,
+          ),
+        );
       },
     );
   }
@@ -204,27 +251,14 @@ class _UIWidgetsState extends State<UIWidgets> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: GestureDetector(
+        onTap: _handleBlankTap,
         behavior: HitTestBehavior.translucent,
-        onTap: _closeAllPanels,
         child: Stack(
           children: [
             Positioned.fill(child: _buildStageBackground()),
             Positioned.fill(child: _buildCharacterStage(context)),
             Positioned.fill(child: _buildStageForeground()),
-            Positioned(
-              bottom: 120,
-              right: 40,
-              child: ValueListenableBuilder<int>(
-                valueListenable: widget.controller.level,
-                builder: (context, level, _) {
-                  return ChatBubble(
-                    text: widget.controller.dialogueLockReason(level + 1),
-                    onNext: () {},
-                    onSkip: () {},
-                  );
-                },
-              ),
-            ),
+            Positioned(bottom: 120, right: 40, child: _buildDialogueBubble()),
             Positioned(top: 10, left: 20, child: _buildTomatoTimerDrop()),
             Positioned(top: 20, left: 50, child: _buildExpBarDrop()),
             Positioned(top: 15, right: 28, child: _buildBlackboardStatsDrop()),
@@ -247,6 +281,7 @@ class _UIWidgetsState extends State<UIWidgets> {
             GestureDetector(
               onTap: () {
                 final bool nextTomatoExpanded = !_isTomatoExpanded;
+                widget.controller.registerUserInteraction();
                 _triggerScaleAnimation('tomato');
                 setState(() {
                   _isTomatoExpanded = nextTomatoExpanded;
@@ -567,6 +602,7 @@ class _UIWidgetsState extends State<UIWidgets> {
         GestureDetector(
           onTap: () {
             final bool nextExpExpanded = !_isExpExpanded;
+            widget.controller.registerUserInteraction();
             _triggerScaleAnimation('exp');
             setState(() {
               _isExpExpanded = nextExpExpanded;
@@ -680,6 +716,7 @@ class _UIWidgetsState extends State<UIWidgets> {
         GestureDetector(
           onTap: () {
             final bool nextStatsExpanded = !_isStatsExpanded;
+            widget.controller.registerUserInteraction();
             _triggerScaleAnimation('stats');
             setState(() {
               _isStatsExpanded = nextStatsExpanded;
@@ -793,6 +830,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                       right: 35,
                       child: GestureDetector(
                         onTap: () {
+                          widget.controller.registerUserInteraction();
                           _showShareCard(context, widget.controller);
                         },
                         child: Column(
@@ -872,7 +910,10 @@ class _UIWidgetsState extends State<UIWidgets> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: widget.controller.playPreviousTrack,
+                onTap: () {
+                  widget.controller.registerUserInteraction();
+                  unawaited(widget.controller.playPreviousTrack());
+                },
                 child: Image.asset(
                   'assets/images/btn_prev.png',
                   width: 30,
@@ -882,7 +923,10 @@ class _UIWidgetsState extends State<UIWidgets> {
               ),
               const SizedBox(width: 12),
               GestureDetector(
-                onTap: widget.controller.playOrPauseMusic,
+                onTap: () {
+                  widget.controller.registerUserInteraction();
+                  unawaited(widget.controller.playOrPauseMusic());
+                },
                 child: Image.asset(
                   isMusicPlaying
                       ? 'assets/images/btn_pause.png'
@@ -894,7 +938,10 @@ class _UIWidgetsState extends State<UIWidgets> {
               ),
               const SizedBox(width: 12),
               GestureDetector(
-                onTap: widget.controller.playNextTrack,
+                onTap: () {
+                  widget.controller.registerUserInteraction();
+                  unawaited(widget.controller.playNextTrack());
+                },
                 child: Image.asset(
                   'assets/images/btn_next.png',
                   width: 30,
@@ -904,7 +951,10 @@ class _UIWidgetsState extends State<UIWidgets> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: widget.controller.toggleMuteMusic,
+                onTap: () {
+                  widget.controller.registerUserInteraction();
+                  unawaited(widget.controller.toggleMuteMusic());
+                },
                 child: Image.asset(
                   'assets/images/btn_music.png',
                   width: 30,
@@ -947,6 +997,7 @@ void _showShareCard(BuildContext context, AppController controller) {
       actions: [
         TextButton(
           onPressed: () {
+            controller.registerUserInteraction();
             unawaited(controller.triggerUiBackSfx());
             Navigator.of(ctx).pop();
           },

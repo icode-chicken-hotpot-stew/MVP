@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 const int kDefaultPomodoroSeconds = 1500;
 const int kDefaultRestSeconds = 300;
 const int kDailyXpCap = 2000;
+const int kDefaultColdStartDialogueDelaySeconds = 5;
 const Duration kIdleDialogueTimeout = Duration(seconds: 60);
 
 const String _kPomodoroSnapshotKey = 'pomodoro.snapshot';
@@ -189,6 +190,7 @@ class AppController extends ChangeNotifier {
     SupervisorNotificationService? supervisorNotificationService,
     AudioService? audioService,
     DateTime Function()? now,
+    int coldStartDialogueDelaySeconds = kDefaultColdStartDialogueDelaySeconds,
   }) : remainingSeconds = ValueNotifier<int>(initialSeconds),
        isActive = ValueNotifier<bool>(initialActive),
        isDrawerOpen = ValueNotifier<bool>(initialDrawerOpen),
@@ -213,7 +215,8 @@ class AppController extends ChangeNotifier {
            supervisorNotificationService ??
            LocalSupervisorNotificationService(),
        _audioService = audioService ?? JustAudioService(),
-       _now = now ?? DateTime.now {
+       _now = now ?? DateTime.now,
+       _coldStartDialogueDelaySeconds = max(0, coldStartDialogueDelaySeconds) {
     _lastInteractionAt = _now();
   }
 
@@ -221,8 +224,9 @@ class AppController extends ChangeNotifier {
     'completed': 1,
     'start_focus': 2,
     'resume': 3,
-    'clicked': 4,
-    'idle': 5,
+    'cold_start': 4,
+    'clicked': 5,
+    'idle': 6,
   };
 
   static const Map<String, List<_DialogueCandidate>> _builtInDialogues =
@@ -244,6 +248,9 @@ class AppController extends ChangeNotifier {
             requiredLevel: 1,
             lines: <String>['欢迎回来，专注还在继续。', '我们接着刚才的节奏。'],
           ),
+        ],
+        'cold_start': <_DialogueCandidate>[
+          _DialogueCandidate(requiredLevel: 1, lines: <String>['我回来了！']),
         ],
         'clicked': <_DialogueCandidate>[
           _DialogueCandidate(
@@ -296,6 +303,9 @@ class AppController extends ChangeNotifier {
   _UiSfxType? _lastUiSfxType;
   DateTime? _lastUiSfxTriggeredAt;
   bool _isInForeground = true;
+  bool _hasTriggeredColdStartDialogue = false;
+  Timer? _coldStartDialogueTimer;
+  int _coldStartDialogueDelaySeconds;
 
   bool _isTalking = false;
   String _currentDialogue = '';
@@ -309,6 +319,7 @@ class AppController extends ChangeNotifier {
   bool get isTalking => _isTalking;
   String get currentDialogue => _currentDialogue;
   String get currentDialogueType => _currentDialogueType;
+  int get coldStartDialogueDelaySeconds => _coldStartDialogueDelaySeconds;
 
   static String _formatCurrentDate() {
     final DateTime now = DateTime.now();
@@ -401,6 +412,26 @@ class AppController extends ChangeNotifier {
 
     _resetIdleTimer();
     unawaited(_ensureDialoguesLoaded());
+  }
+
+  void setColdStartDialogueDelaySeconds(int seconds) {
+    _coldStartDialogueDelaySeconds = max(0, seconds);
+  }
+
+  void scheduleColdStartDialogueAfterEntrance({int? delaySeconds}) {
+    if (_hasTriggeredColdStartDialogue || _coldStartDialogueTimer != null) {
+      return;
+    }
+
+    final int effectiveDelay = max(
+      0,
+      delaySeconds ?? _coldStartDialogueDelaySeconds,
+    );
+
+    _coldStartDialogueTimer = Timer(Duration(seconds: effectiveDelay), () {
+      _coldStartDialogueTimer = null;
+      unawaited(_maybeTriggerColdStartDialogue());
+    });
   }
 
   Future<void> synchronizeWithCurrentTime() async {
@@ -1298,11 +1329,24 @@ class AppController extends ChangeNotifier {
       return pomodoroState.value == PomodoroState.studying;
     }
 
+    if (type == 'cold_start') {
+      return pomodoroState.value == PomodoroState.resting;
+    }
+
     if (pomodoroState.value == PomodoroState.studying) {
       return false;
     }
 
     return true;
+  }
+
+  Future<void> _maybeTriggerColdStartDialogue() async {
+    if (_hasTriggeredColdStartDialogue) {
+      return;
+    }
+
+    _hasTriggeredColdStartDialogue = true;
+    await triggerDialogue('cold_start');
   }
 
   void _startIdleTimer() {
@@ -1856,6 +1900,8 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _isInForeground = false;
     _stopTicker();
+    _coldStartDialogueTimer?.cancel();
+    _coldStartDialogueTimer = null;
     unawaited(_audioService.stopBgm());
     unawaited(_cancelSupervisorSession(clearState: false));
     _idleTimer?.cancel();

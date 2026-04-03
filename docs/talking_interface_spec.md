@@ -54,19 +54,21 @@
 
 ## 4. 触发类型与优先级
 
-系统支持 5 种触发类型（字符串常量）：
+系统支持 6 种触发类型（字符串常量）：
 
 - `completed`（优先级 1，最高）
 - `start_focus`（优先级 2）
 - `resume`（优先级 3）
-- `clicked`（优先级 4）
-- `idle`（优先级 5，最低）
+- `cold_start`（优先级 4）
+- `clicked`（优先级 5）
+- `idle`（优先级 6，最低）
 
 ### 4.1 触发前置条件
 
 - 未知类型：拒绝触发。
 - `resume`：仅允许在 `pomodoroState == studying && phaseStatus == running`。
 - `start_focus`：仅允许在 `pomodoroState == studying`。
+- `cold_start`：仅允许在 `pomodoroState == resting`。
 - 其他类型：当 `pomodoroState == studying` 时拒绝触发。
 
 ### 4.2 对话进行中仲裁规则
@@ -91,6 +93,7 @@
   - 初始化音频与通知。
   - 启动 idle 计时。
   - 异步预热对话资产加载。
+  - 不直接触发 `cold_start`。
 
 - `Future<void> synchronizeWithCurrentTime()`
   - App 返回前台后同步计时状态。
@@ -112,6 +115,10 @@
 
 - `void registerUserInteraction()`
   - 刷新最后交互时间并重置 idle 计时。
+
+- `void scheduleColdStartDialogueAfterEntrance({int? delaySeconds})`
+  - 在检测到角色出场动画开始后，延迟触发 `cold_start`。
+  - 默认延迟秒数由 `coldStartDialogueDelaySeconds` 控制（默认 5 秒）。
 
 ---
 

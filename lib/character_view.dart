@@ -28,6 +28,9 @@ class CharacterView extends StatefulWidget {
   /// 角色被点击时回调给 Flutter
   final VoidCallback? onCharacterTap;
 
+  /// 出场动画开始播放时回调给 Flutter
+  final VoidCallback? onEntranceMotionStarted;
+
   /// 纹理文件路径列表（相对于 assets 目录）
   final List<String> texturePaths;
 
@@ -46,6 +49,7 @@ class CharacterView extends StatefulWidget {
     required this.pomodoroState,
     required this.isTalking,
     this.onCharacterTap,
+    this.onEntranceMotionStarted,
     this.texturePaths = const [
       'live2d/hiyori_pro/hiyori_movie_pro_t03.4096/texture_00.png',
     ],
@@ -329,6 +333,9 @@ class _CharacterViewState extends State<CharacterView> {
           return;
         case 'character_tap':
           widget.onCharacterTap?.call();
+          return;
+        case 'entrance_motion_started':
+          widget.onEntranceMotionStarted?.call();
           return;
         default:
           return;

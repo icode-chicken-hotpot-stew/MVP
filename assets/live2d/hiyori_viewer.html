@@ -961,6 +961,7 @@
                     updateStatus('[Init] Start first-frame parameters pre-applied');
                 }
 
+                postBridgeMessage('entrance_motion_started');
                 const startPlayed = await playMotionByName('Start', 0);
                 if (!startPlayed) {
                     updateStatus('[Init] Start motion unavailable, fallback to state motion');

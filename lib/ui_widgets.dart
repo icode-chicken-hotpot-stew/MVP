@@ -197,6 +197,10 @@ class _UIWidgetsState extends State<UIWidgets> {
     unawaited(widget.controller.triggerDialogue('clicked'));
   }
 
+  void _handleEntranceMotionStarted() {
+    widget.controller.scheduleColdStartDialogueAfterEntrance();
+  }
+
   Widget _buildCharacterStage(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([
@@ -208,6 +212,7 @@ class _UIWidgetsState extends State<UIWidgets> {
           pomodoroState: widget.controller.pomodoroState.value,
           isTalking: widget.controller.isTalking,
           onCharacterTap: _handleCharacterTap,
+          onEntranceMotionStarted: _handleEntranceMotionStarted,
         );
       },
     );

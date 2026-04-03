@@ -309,12 +309,6 @@ class AppController extends ChangeNotifier {
   bool get isTalking => _isTalking;
   String get currentDialogue => _currentDialogue;
   String get currentDialogueType => _currentDialogueType;
-  bool get isCurrentDialogueLastLine {
-    if (!_isTalking || _currentDialogueQueue.isEmpty) {
-      return false;
-    }
-    return _currentDialogueIndex == _currentDialogueQueue.length - 1;
-  }
 
   static String _formatCurrentDate() {
     final DateTime now = DateTime.now();
@@ -663,14 +657,6 @@ class AppController extends ChangeNotifier {
     if (!_isTalking &&
         _currentDialogueQueue.isEmpty &&
         _currentDialogueType.isEmpty) {
-      return;
-    }
-
-    _exitDialogue();
-  }
-
-  void autoDismissDialogue() {
-    if (!_isTalking) {
       return;
     }
 

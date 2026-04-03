@@ -1,8 +1,28 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mvp_app/app_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_doubles.dart';
+
+const String _dialogueFixtureJson = '''
+{
+  "start_focus": [[1, "开始专注提示"]],
+  "completed": [[1, "完成提示"]],
+  "resume": [[1, "恢复提示"]],
+  "clicked": [
+    [1, "诶？你问我以前是不是经常刷视频到凌晨？", "那、那是过去式了啦！"],
+    [1, "诶诶诶别戳脸啦！会、会变圆的！（小声）……再戳一下也不是不行。"],
+    [4, "我、我刚才是在冥想！对，冥想！"],
+    [4, "如果现在能瞬移，你最想去哪里？我……想去便利店买柠檬茶。"],
+    [5, "如果学习能像打游戏一样掉装备，我早就满级神装了吧"]
+  ],
+  "idle": [[1, "空闲提示"]]
+}
+''';
 
 void main() {
   group('xp and level system', () {
@@ -21,6 +41,21 @@ void main() {
 
     setUp(() async {
       TestWidgetsFlutterBinding.ensureInitialized();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMessageHandler('flutter/assets', (ByteData? message) async {
+            if (message == null) {
+              return null;
+            }
+            final String key = utf8.decode(message.buffer.asUint8List());
+            if (key != 'assets/dialogues/dialogues.json') {
+              return null;
+            }
+
+            final Uint8List bytes = Uint8List.fromList(
+              utf8.encode(_dialogueFixtureJson),
+            );
+            return ByteData.view(bytes.buffer);
+          });
       SharedPreferences.setMockInitialValues(<String, Object>{});
       notifications = FakeSupervisorNotificationService();
       audio = FakeAudioService();
@@ -30,6 +65,8 @@ void main() {
     });
 
     tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMessageHandler('flutter/assets', null);
       controller.dispose();
     });
 

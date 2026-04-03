@@ -223,10 +223,8 @@ class _UIWidgetsState extends State<UIWidgets> {
 
         return ChatBubble(
           text: widget.controller.currentDialogue,
-          isLastLine: widget.controller.isCurrentDialogueLastLine,
           onNext: widget.controller.nextDialogue,
           onSkip: widget.controller.skipDialogue,
-          onAutoDismiss: widget.controller.autoDismissDialogue,
         );
       },
     );
@@ -1008,18 +1006,14 @@ void _showShareCard(BuildContext context, AppController controller) {
 
 class ChatBubble extends StatefulWidget {
   final String text;
-  final bool isLastLine;
   final VoidCallback onNext;
   final VoidCallback onSkip;
-  final VoidCallback onAutoDismiss;
 
   const ChatBubble({
     super.key,
     required this.text,
-    required this.isLastLine,
     required this.onNext,
     required this.onSkip,
-    required this.onAutoDismiss,
   });
 
   @override
@@ -1029,7 +1023,7 @@ class ChatBubble extends StatefulWidget {
 class _ChatBubbleState extends State<ChatBubble> {
   String _displayedText = '';
   Timer? _timer;
-  Timer? _autoDismissTimer;
+  Timer? _autoNextTimer;
   int _charIndex = 0;
 
   void _handleBubbleTap() {
@@ -1039,12 +1033,17 @@ class _ChatBubbleState extends State<ChatBubble> {
         _charIndex = widget.text.length;
         _displayedText = widget.text;
       });
-      _scheduleAutoDismissIfNeeded();
+      _scheduleAutoNextIfNeeded();
       return;
     }
 
-    _cancelAutoDismissTimer();
+    _cancelAutoNextTimer();
     widget.onNext();
+  }
+
+  void _handleSkipTap() {
+    _cancelAutoNextTimer();
+    widget.onSkip();
   }
 
   @override
@@ -1058,24 +1057,19 @@ class _ChatBubbleState extends State<ChatBubble> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.text != widget.text) {
       _startTypewriterEffect();
-      return;
-    }
-
-    if (oldWidget.isLastLine != widget.isLastLine) {
-      _scheduleAutoDismissIfNeeded();
     }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _cancelAutoDismissTimer();
+    _cancelAutoNextTimer();
     super.dispose();
   }
 
   void _startTypewriterEffect() {
     _timer?.cancel();
-    _cancelAutoDismissTimer();
+    _cancelAutoNextTimer();
     setState(() {
       _displayedText = '';
       _charIndex = 0;
@@ -1093,31 +1087,31 @@ class _ChatBubbleState extends State<ChatBubble> {
 
       if (_charIndex >= widget.text.length) {
         timer.cancel();
-        _scheduleAutoDismissIfNeeded();
+        _scheduleAutoNextIfNeeded();
       }
     });
   }
 
-  void _cancelAutoDismissTimer() {
-    _autoDismissTimer?.cancel();
-    _autoDismissTimer = null;
+  void _cancelAutoNextTimer() {
+    _autoNextTimer?.cancel();
+    _autoNextTimer = null;
   }
 
-  void _scheduleAutoDismissIfNeeded() {
-    _cancelAutoDismissTimer();
+  void _scheduleAutoNextIfNeeded() {
+    _cancelAutoNextTimer();
 
-    if (!widget.isLastLine || _charIndex < widget.text.length) {
+    if (_charIndex < widget.text.length) {
       return;
     }
 
-    _autoDismissTimer = Timer(const Duration(seconds: 8), () {
+    _autoNextTimer = Timer(const Duration(seconds: 8), () {
       if (!mounted) {
         return;
       }
-      if (!widget.isLastLine || _charIndex < widget.text.length) {
+      if (_charIndex < widget.text.length || _displayedText != widget.text) {
         return;
       }
-      widget.onAutoDismiss();
+      widget.onNext();
     });
   }
 
@@ -1173,7 +1167,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                 bottom: -5,
                 right: -5,
                 child: GestureDetector(
-                  onTap: widget.onSkip,
+                  onTap: _handleSkipTap,
                   child: const Icon(
                     Icons.fast_forward_rounded,
                     size: 20,

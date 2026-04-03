@@ -156,6 +156,7 @@ class _UIWidgetsState extends State<UIWidgets> {
     required int value,
     required VoidCallback onIncrease,
     required VoidCallback onDecrease,
+    required VoidCallback onSuperIncrease,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -171,12 +172,13 @@ class _UIWidgetsState extends State<UIWidgets> {
             child: Text(
               label,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 color: Color(0xFF5D4037),
                 fontFamily: 'ZCOOLKuaiLe-Regular',
               ),
             ),
           ),
+          const SizedBox(width: 6),
           Container(
             width: 40,
             height: 26,
@@ -196,25 +198,37 @@ class _UIWidgetsState extends State<UIWidgets> {
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
           SizedBox(
-            width: 26,
-            height: 26,
+            width: 28,
+            height: 28,
             child: IconButton(
               onPressed: onDecrease,
-              icon: const Icon(Icons.remove, size: 18),
+              icon: const Icon(Icons.remove, size: 16),
               color: const Color(0xFF6D4C41),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
             ),
           ),
-          const SizedBox(width: 2),
+          const SizedBox(width: 4),
           SizedBox(
-            width: 26,
-            height: 26,
+            width: 28,
+            height: 28,
             child: IconButton(
               onPressed: onIncrease,
-              icon: const Icon(Icons.add, size: 18),
+              icon: const Icon(Icons.add, size: 16),
+              color: const Color(0xFF6D4C41),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: IconButton(
+              onPressed: onSuperIncrease,
+              icon: const Icon(Icons.keyboard_double_arrow_up, size: 16),
               color: const Color(0xFF6D4C41),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
@@ -285,7 +299,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                 },
               ),
             ),
-            Positioned(top: 10, left: 20, child: _buildTomatoTimerDrop()),
+            Positioned(top: 15, left: 20, child: _buildTomatoTimerDrop()),
             Positioned(top: 20, left: 50, child: _buildExpBarDrop()),
             Positioned(top: 15, right: 28, child: _buildBlackboardStatsDrop()),
             Positioned(bottom: 10, left: 15, child: _buildRecordPlayer()),
@@ -317,7 +331,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                   }
                 });
               },
-              child: AnimatedScale(
+                child: AnimatedScale(
                 scale: _isTomatoScaling ? 0.9 : 1.0,
                 duration: const Duration(milliseconds: 150),
                 child: Container(
@@ -445,17 +459,17 @@ class _UIWidgetsState extends State<UIWidgets> {
           ],
         ),
         Positioned(
-          top: 55,
-          left: 190,
+          top: 10,
+          left: 175,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {},
-                child: AnimatedContainer(
+            child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOut,
               alignment: Alignment.topLeft,
-              height: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 240 : 0,
-              width: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 170 : 0,
+              height: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 265 : 0,
+              width: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 200 : 0,
               clipBehavior: Clip.hardEdge,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.96),
@@ -468,7 +482,6 @@ class _UIWidgetsState extends State<UIWidgets> {
               child: Material(
                 color: Colors.transparent,
                 child: SingleChildScrollView(
-                  physics: const NeverScrollableScrollPhysics(),
                   child: Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: Column(
@@ -501,9 +514,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                                         value: value ~/ 60,
                                         onIncrease: () => _changeFocusMinutes(1),
                                         onDecrease: () => _changeFocusMinutes(-1),
+                                        onSuperIncrease: () => _changeFocusMinutes(10),
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 3),
                                     ValueListenableBuilder<int>(
                                       valueListenable: widget.controller.restDurationSeconds,
                                       builder: (context, value, _) => _buildAdjustRow(
@@ -511,9 +525,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                                         value: value ~/ 60,
                                         onIncrease: () => _changeRestMinutes(1),
                                         onDecrease: () => _changeRestMinutes(-1),
+                                        onSuperIncrease: () => _changeRestMinutes(10),
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 3),
                                     ValueListenableBuilder<int?>(
                                       valueListenable: widget.controller.cycleCount,
                                       builder: (context, value, _) => _buildAdjustRow(
@@ -521,9 +536,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                                         value: value ?? 0,
                                         onIncrease: () => _changeCycleCount(1),
                                         onDecrease: () => _changeCycleCount(-1),
+                                        onSuperIncrease: () => _changeCycleCount(10),
                                       ),
                                     ),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 1),
                                     Align(
                                       alignment: Alignment.centerLeft,
                                       child: TextButton(
@@ -611,8 +627,8 @@ class _UIWidgetsState extends State<UIWidgets> {
             scale: _isExpScaling ? 0.9 : 1.0,
             duration: const Duration(milliseconds: 150),
             child: Container(
-              width: 100,
-              height: 35,
+              width: 120,
+              height: 42,
               decoration: const BoxDecoration(
                 image: DecorationImage(
                   image: AssetImage('assets/images/scroll_rolled.png'),
@@ -626,7 +642,7 @@ class _UIWidgetsState extends State<UIWidgets> {
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
           height: _isExpExpanded ? 160 : 0,
-          width: 140,
+          width: 180,
           margin: const EdgeInsets.only(top: 8),
           clipBehavior: Clip.hardEdge,
           decoration: BoxDecoration(
@@ -718,8 +734,8 @@ class _UIWidgetsState extends State<UIWidgets> {
             scale: _isStatsScaling ? 0.9 : 1.0,
             duration: const Duration(milliseconds: 150),
             child: Container(
-              width: 50,
-              height: 50,
+                width: 64,
+                height: 64,
               decoration: const BoxDecoration(
                 image: DecorationImage(
                   image: AssetImage('assets/images/board_btn.png'),
@@ -753,26 +769,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                 width: 320,
                 child: Stack(
                   children: [
-                    // 背景虚化团队文字（比内容更靠后），作为视觉水印
-                    Positioned.fill(
-                      child: Center(
-                        child: ImageFiltered(
-                          imageFilter: ImageFilter.blur(sigmaX: 4.0, sigmaY: 4.0),
-                          child: Opacity(
-                            opacity: 0.08,
-                            child: Text(
-                              '鸡公煲队',
-                              style: TextStyle(
-                                fontSize: 68,
-                                color: Colors.white,
-                                fontFamily: 'ZhuoKai',
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    //（水印已移除）
                     Padding(
                       padding: const EdgeInsets.only(
                         left: 50.0,
@@ -824,16 +821,16 @@ class _UIWidgetsState extends State<UIWidgets> {
                       right: 35,
                       child: GestureDetector(
                         onTap: () {
-                          _showShareCard(context, widget.controller);
+                          _showAboutUsDialog(context, widget.controller);
                         },
-                        child: Column(
+                            child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              '分享',
+                              '关于我们',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.9),
-                                fontSize: 15,
+                                fontSize: 12,
                                 fontFamily: 'ZhuoKai',
                                 shadows: const [
                                   BoxShadow(color: Colors.white38, blurRadius: 2),
@@ -842,8 +839,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                             ),
                             const SizedBox(height: 4),
                             Container(
-                              width: 55,
-                              height: 35,
+                              width: 64,
+                              height: 44,
                               decoration: const BoxDecoration(
                                 image: DecorationImage(
                                   image: AssetImage('assets/images/eraser_btn.png'),
@@ -855,30 +852,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                         ),
                       ),
                     ),
-                    // 小字水印放在板擦左侧，稍微模糊以作为 logo 标识
-                    Positioned(
-                      // 放在板擦旁边（左侧），减少模糊以便更清晰可见
-                      bottom: 75,
-                      right: 200,
-                      child: ImageFiltered(
-                        imageFilter: ImageFilter.blur(sigmaX: 0.6, sigmaY: 0.6),
-                        child: Opacity(
-                          opacity: 0.85,
-                          child: Text(
-                            '鸡公煲队',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white,
-                              fontFamily: 'ZCOOLKuaiLe-Regular',
-                              fontWeight: FontWeight.w500,
-                              shadows: const [
-                                Shadow(blurRadius: 1.5, color: Colors.black26, offset: Offset(0.6, 0.6)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    //（小字水印已移除）
                   ],
                 ),
               ),
@@ -896,8 +870,8 @@ class _UIWidgetsState extends State<UIWidgets> {
         // 使用 Stack 在音量按钮上方弹出音量滑块（浮层）
         // 注意：指定高度以保证播放器始终可见（避免 Stack 仅包含 Positioned 时高度为 0 的问题）。
         return SizedBox(
-          width: 240,
-          height: 60,
+          width: 320,
+          height: 80,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -907,14 +881,14 @@ class _UIWidgetsState extends State<UIWidgets> {
                 left: 0,
                 right: 0,
                 child: Container(
-                  width: 240,
-                  height: 60,
+                  width: 320,
+                  height: 80,
                   decoration: BoxDecoration(
                     image: const DecorationImage(
                       image: AssetImage('assets/images/record_bg.png'),
                       fit: BoxFit.fill,
                     ),
-                    borderRadius: BorderRadius.circular(30),
+                    borderRadius: BorderRadius.circular(36),
                     boxShadow: const [
                       BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 5)),
                     ],
@@ -925,8 +899,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                       const SizedBox(width: 12),
                       Image.asset(
                         'assets/images/record_disk.png',
-                        width: 40,
-                        height: 40,
+                        width: 56,
+                        height: 56,
                         fit: BoxFit.contain,
                       ),
                       const SizedBox(width: 8),
@@ -934,8 +908,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                         onTap: widget.controller.playPreviousTrack,
                         child: Image.asset(
                           'assets/images/btn_prev.png',
-                          width: 30,
-                          height: 30,
+                          width: 44,
+                          height: 44,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -944,8 +918,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                         onTap: widget.controller.playOrPauseMusic,
                         child: Image.asset(
                           isMusicPlaying ? 'assets/images/btn_pause.png' : 'assets/images/btn_play.png',
-                          width: 45,
-                          height: 45,
+                          width: 64,
+                          height: 64,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -954,8 +928,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                         onTap: widget.controller.playNextTrack,
                         child: Image.asset(
                           'assets/images/btn_next.png',
-                          width: 30,
-                          height: 30,
+                          width: 44,
+                          height: 44,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -969,8 +943,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                         },
                         child: Image.asset(
                           'assets/images/btn_music.png',
-                          width: 26,
-                          height: 26,
+                          width: 34,
+                          height: 34,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -1063,29 +1037,60 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 }
 
-void _showShareCard(BuildContext context, AppController controller) {
-  final int seconds = controller.remainingSeconds.value;
-  final double hours = (25 * 60 - seconds) / 3600.0;
+void _showAboutUsDialog(BuildContext context, AppController controller, [String aboutText = '''鸡公煲队 (Rooster Stewdio)
+
+由 4 人团队历时 60 天精心慢炖而成。
+鸡公煲队正式入驻！
+我们是一个由四位开发者组成的独立团队。
+我们热爱简洁的设计与纯粹的交互，
+致力于在方寸屏幕间构建有趣的灵魂。
+感谢你拨冗体验我们的作品，
+你的支持是我们不断迭代的动力。
+制作团队：
+主厨：陈柏森
+摆盘专家：刘思源
+汤底架构师：姚博闻
+灵魂调味师：陈逸宇
+
+“加辣、加汤、不加 Bug！”''']) {
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: const Color(0xFFF4E8C1),
-      title: const Text('今日复古专注打卡'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '今日学习：${hours.toStringAsFixed(2)} 小时',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+      contentPadding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+      content: SizedBox(
+        width: 280,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 圆形 logo（硬裁切）：请把图片放在 assets/images/about_logo.png
+              CircleAvatar(
+                radius: 28,
+                backgroundImage: const AssetImage('assets/images/about_logo.png'),
+                backgroundColor: Colors.transparent,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'ABOUT US',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                aboutText,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, height: 1.4),
+              ),
+              const SizedBox(height: 6),
+            ],
           ),
-          const SizedBox(height: 16),
-          const Text('（此处为分享卡片占位）', style: TextStyle(fontSize: 12, color: Colors.grey)),
-        ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('收下', style: TextStyle(color: Colors.brown)),
+          child: const Text('CLOSE', style: TextStyle(color: Colors.brown)),
         ),
       ],
     ),

@@ -157,6 +157,15 @@ class _PhaseAdvanceResult {
   final bool exitedStudyingRunning;
 }
 
+/// AppController 是整个应用的状态中枢。
+///
+/// 负责：
+/// - 番茄钟运行状态（专注/休息、运行/暂停/就绪），
+/// - 时间同步与倒计时逻辑，
+/// - 专注时长与休息时长配置、循环次数，
+/// - XP 统计与升级逻辑，
+/// - 背景音乐与通知服务状态持久化，
+/// - 以及与 SharedPreferences 的持久化读写。
 class AppController {
   AppController({
     int initialSeconds = kDefaultPomodoroSeconds,

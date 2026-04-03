@@ -263,6 +263,8 @@ class _UIWidgetsState extends State<UIWidgets> {
       _isStatsExpanded = false;
       _isExpExpanded = false;
       _isPomodoroConfigOpen = false;
+      _isVolumePanelOpen = false;
+      _isInteractingWithVolume = false;
     });
   }
 
@@ -722,7 +724,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                     valueListenable: widget.controller.level,
                     builder: (context, level, _) {
                       return Text(
-                        'Lv. $level 学徒',
+                        '【 Lv. $level 】\n${widget.controller.xpToNextLevel} XP',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.brown[900],
@@ -932,13 +934,14 @@ class _UIWidgetsState extends State<UIWidgets> {
         // 注意：指定高度以保证播放器始终可见（避免 Stack 仅包含 Positioned 时高度为 0 的问题）。
         return SizedBox(
           width: 240,
-          height: 60,
+          // 让上方音量浮层也落在 Stack 命中区域内，避免“可见但不可拖动”。
+          height: _isVolumePanelOpen ? 260 : 60,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
               // 主播放器条
               Positioned(
-                top: 0,
+                bottom: 0,
                 left: 0,
                 right: 0,
                 child: Container(
@@ -1030,12 +1033,15 @@ class _UIWidgetsState extends State<UIWidgets> {
                   child: Material(
                     color: Colors.transparent,
                     child: Container(
-                      width: 48,
-                      height: 160,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      width: 56,
+                      height: 190,
+                      padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.85),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.15),
+                        ),
                         boxShadow: const [
                           BoxShadow(
                             color: Colors.black45,
@@ -1050,28 +1056,35 @@ class _UIWidgetsState extends State<UIWidgets> {
                           return Column(
                             mainAxisSize: MainAxisSize.max,
                             children: [
-                              const Icon(
-                                Icons.volume_up,
-                                color: Colors.white,
-                                size: 18,
+                              const Text(
+                                '+',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 4),
                               Expanded(
                                 child: RotatedBox(
                                   quarterTurns: 3,
                                   child: SliderTheme(
                                     data: SliderTheme.of(context).copyWith(
-                                      trackHeight: 6,
+                                      trackHeight: 8,
                                       thumbShape: const RoundSliderThumbShape(
-                                        enabledThumbRadius: 8,
+                                        enabledThumbRadius: 9,
                                       ),
+                                      overlayShape:
+                                          const RoundSliderOverlayShape(
+                                            overlayRadius: 14,
+                                          ),
                                     ),
                                     child: Slider(
                                       value: volume,
                                       min: 0,
                                       max: 1,
-                                      activeColor: Colors.orangeAccent,
-                                      inactiveColor: Colors.white30,
+                                      activeColor: Colors.black,
+                                      inactiveColor: Colors.black26,
                                       onChangeStart: (v) {
                                         setState(() {
                                           _isInteractingWithVolume = true;
@@ -1091,23 +1104,14 @@ class _UIWidgetsState extends State<UIWidgets> {
                                   ),
                                 ),
                               ),
-                              IconButton(
-                                icon: Icon(
-                                  volume > 0
-                                      ? Icons.volume_up
-                                      : Icons.volume_off,
-                                  color: Colors.white,
-                                  size: 18,
+                              const SizedBox(height: 2),
+                              const Text(
+                                '-',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                                onPressed: () {
-                                  if (volume > 0) {
-                                    widget.controller.setMusicVolume(0.0);
-                                  } else {
-                                    widget.controller.setMusicVolume(1.0);
-                                  }
-                                },
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
                               ),
                             ],
                           );
@@ -1127,21 +1131,20 @@ class _UIWidgetsState extends State<UIWidgets> {
 void _showAboutUsDialog(
   BuildContext context,
   AppController controller, [
-  String aboutText = '''鸡公煲队 (Rooster Stewdio)
-
-由 4 人团队历时 60 天精心慢炖而成。
+  String aboutText = '''
 鸡公煲队正式入驻！
 我们是一个由四位开发者组成的独立团队。
-我们热爱简洁的设计与纯粹的交互，
-致力于在方寸屏幕间构建有趣的灵魂。
-感谢你拨冗体验我们的作品，
-你的支持是我们不断迭代的动力。
-制作团队：
-主厨：陈柏森
-摆盘专家：刘思源
-汤底架构师：姚博闻
-灵魂调味师：陈逸宇
 
+感谢你拨冗体验我们的作品，
+由 4 人团队历时 60 天精心慢炖而成,
+你的支持是我们不断迭代的动力。
+--------------------------------
+制作团队：
+主厨：陈柏森 Paschen
+摆盘专家：刘思源 Stella
+汤底架构师：姚博闻 YewFence
+灵魂调味师：陈逸宇 Xiaoyukuki
+--------------------------------
 “加辣、加汤、不加 Bug！”''',
 ]) {
   showDialog(
@@ -1199,7 +1202,7 @@ void _showAboutUsDialog(
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'ABOUT US',
+                  '鸡公煲队\nRooster Stewdio',
                   style: TextStyle(
                     fontSize: 19,
                     fontWeight: FontWeight.w700,

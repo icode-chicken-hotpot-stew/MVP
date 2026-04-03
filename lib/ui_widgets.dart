@@ -870,8 +870,8 @@ class _UIWidgetsState extends State<UIWidgets> {
         // 使用 Stack 在音量按钮上方弹出音量滑块（浮层）
         // 注意：指定高度以保证播放器始终可见（避免 Stack 仅包含 Positioned 时高度为 0 的问题）。
         return SizedBox(
-          width: 320,
-          height: 80,
+          width: 240,
+          height: 60,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -881,14 +881,14 @@ class _UIWidgetsState extends State<UIWidgets> {
                 left: 0,
                 right: 0,
                 child: Container(
-                  width: 320,
-                  height: 80,
+                  width: 240,
+                  height: 60,
                   decoration: BoxDecoration(
                     image: const DecorationImage(
                       image: AssetImage('assets/images/record_bg.png'),
                       fit: BoxFit.fill,
                     ),
-                    borderRadius: BorderRadius.circular(36),
+                    borderRadius: BorderRadius.circular(30),
                     boxShadow: const [
                       BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 5)),
                     ],
@@ -899,8 +899,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                       const SizedBox(width: 12),
                       Image.asset(
                         'assets/images/record_disk.png',
-                        width: 56,
-                        height: 56,
+                        width: 40,
+                        height: 40,
                         fit: BoxFit.contain,
                       ),
                       const SizedBox(width: 8),
@@ -908,8 +908,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                         onTap: widget.controller.playPreviousTrack,
                         child: Image.asset(
                           'assets/images/btn_prev.png',
-                          width: 44,
-                          height: 44,
+                          width: 30,
+                          height: 30,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -918,8 +918,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                         onTap: widget.controller.playOrPauseMusic,
                         child: Image.asset(
                           isMusicPlaying ? 'assets/images/btn_pause.png' : 'assets/images/btn_play.png',
-                          width: 64,
-                          height: 64,
+                          width: 45,
+                          height: 45,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -928,8 +928,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                         onTap: widget.controller.playNextTrack,
                         child: Image.asset(
                           'assets/images/btn_next.png',
-                          width: 44,
-                          height: 44,
+                          width: 30,
+                          height: 30,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -943,8 +943,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                         },
                         child: Image.asset(
                           'assets/images/btn_music.png',
-                          width: 34,
-                          height: 34,
+                          width: 26,
+                          height: 26,
                           fit: BoxFit.contain,
                         ),
                       ),

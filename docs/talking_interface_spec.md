@@ -1,488 +1,205 @@
-# 对话与 Tips 系统 Specification
+# 对话与 Tips 系统 Interface Spec（当前实现基线）
 
-> **版本**: v5.1
-> **最后更新**: 2026.3.24
-> **适用范围**: 对话气泡、Tips 展示、与番茄钟状态联动
-> **文档定位**: 说明这个功能要做什么、当前系统长什么样、后续实现时需要兼容哪些接口与约束
-
----
-
-## 1. 文档目的
-
-本文档用于回答 3 个问题：
-
-1. **这个功能要实现什么需求**
-2. **当前仓库里的相关系统现状是什么**
-3. **后续接入时必须兼容哪些现有接口与结构**
-
-本文档**不是当前已实现功能的说明书**，也**不是详细实现方案**。如果文档中的“目标能力”与当前代码不一致，应以“当前状态”章节和实际代码为准。
+> 版本: v6.0  
+> 最后更新: 2026-04-03  
+> 适用范围: `AppController` 对话状态、触发规则、UI 消费契约
 
 ---
 
-## 2. 功能目标（做什么）
+## 1. 文档定位
 
-### 2.1 目标
+本文档描述当前仓库中已经生效的对话系统契约，作为实现和联调基线。
 
-对话与 Tips 系统的目标是：
-
-- 在合适的业务时机展示角色气泡文案
-- 为用户提供轻量提示、鼓励和陪伴感
-- 与番茄钟状态联动，但**不替代番茄钟主流程**
-- 在不干扰当前前端 + 基础后端主流程交付的前提下，为后续角色动画、文案资源和交互扩展预留接入点
-
-### 2.2 目标场景
-
-系统需要覆盖以下触发场景：
-
-| 触发类型 | 触发时机 | 目标效果 |
-| :-- | :-- | :-- |
-| `clicked` | 用户点击角色 | 显示一条互动文案 |
-| `start_focus` | 用户开始专注 | 显示开始专注提示 |
-| `completed` | 一轮专注完成 | 显示完成提示 |
-| `resume` | App 返回且仍处于专注流程中 | 显示恢复提示 |
-| `idle` | 用户长时间无操作 | 显示 Tips 或提醒 |
-
-### 2.3 非目标
-
-本 spec 不定义以下内容：
-
-- Live2D 动作细节
-- 文案生成策略
-- JSON 文件最终格式细节
-- 持久化实现方式
-- 番茄钟主状态机本身
-
-这些内容如需冻结，应在对应实现文档中单独定义。
+- 代码事实优先于历史文档。
+- 如后续修改接口，需同步更新本文件。
 
 ---
 
-## 3. 当前状态（现有系统长什么样）
+## 2. 入口与模块关系
 
-### 3.1 当前默认入口
+默认入口链路：
 
-当前应用默认入口如下：
+1. `lib/main.dart` 创建 `AppController` 并调用 `initialize()`。
+2. `MainStage` 在 `AppLifecycleState.resumed` 时调用 `synchronizeWithCurrentTime()`。
+3. `UIWidgets` 读取 controller 状态并渲染 `ChatBubble`。
 
-- `lib/main.dart` 创建 `MyApp`
-- `MyApp` 进入 `MainStage`
-- `MainStage` 创建 `AppController`
-- `MainStage` 将 `AppController` 注入 `UIWidgets`
-
-当前默认主界面**只有** `UIWidgets`，没有独立接入的 `DialogueUI` 层。
-
-### 3.2 当前控制器状态
-
-当前 `lib/app_controller.dart` 的真实公开状态与方法为：
-
-#### 状态
-- `remainingSeconds: ValueNotifier<int>`
-- `isActive: ValueNotifier<bool>`
-- `isDrawerOpen: ValueNotifier<bool>`
-- `currentDate: ValueNotifier<String>`
-
-#### 方法
-- `toggleTimer()`
-- `resetTimer()`
-- `fetchHistoryData()`
-- `dispose()`
-
-当前控制器**还没有**以下能力：
-
-- 对话状态
-- 对话队列
-- 对话触发接口
-- 生命周期恢复接口
-- 对话文案加载接口
-
-### 3.3 当前 UI 状态
-
-当前 `lib/ui_widgets.dart` 承载主界面和大部分交互逻辑，包括：
-
-- 顶部信息区
-- 角色展示占位区
-- Dock/按钮区
-- 历史统计面板
-
-当前 UI 中**还没有**：
-
-- 对话气泡层
-- Skip / Next 对话交互
-- 专门的 Tips 展示区
-
-### 3.4 当前角色模块状态
-
-`lib/character_view.dart` 当前仍是 stub，尚未成为默认入口中的正式角色模块。
-
-因此，现阶段关于“角色点击触发对话”“角色动画切换”“对话时角色说话动作”等内容，都属于**目标能力**，不是当前事实。
-
-### 3.5 当前资源状态
-
-当前 `pubspec.yaml` 仅明确注册了：
-
-- `assets/background.webp`
-
-当前仓库**没有形成稳定的对话资源契约**，因此：
-
-- `assets/dialogues.json` 或 `assets/dialogue.json` 目前都不应被视为既有事实
-- 对话文案资源路径需要在实现阶段统一命名并注册到 `pubspec.yaml`
-
-### 3.6 与旧文档的关系
-
-`docs/interface_spec.md` 中包含更大范围的未来设计与旧命名，不能直接视为当前事实。
-番茄钟现状与当前主界面结构，应优先参考：
-
-- `openspec/changes/improve-pomodoro-functionality/design.md`
-- `lib/main.dart`
-- `lib/app_controller.dart`
-- `lib/ui_widgets.dart`
+当前对话 UI 已在 `lib/ui_widgets.dart` 主界面内接入，不依赖独立 `DialogueUI` 页面。
 
 ---
 
-## 4. 需求边界
+## 3. 状态模型
 
-### 4.1 系统职责
+### 3.1 公开对话状态
 
-对话与 Tips 系统负责：
+由 `AppController`（`ChangeNotifier`）公开：
 
-- 接收外部触发
-- 选择要展示的文案
-- 管理当前展示状态
-- 提供用户关闭 / 跳过 / 下一条的交互能力
-- 向 UI 提供当前可渲染的数据
+- `bool get isTalking`
+- `String get currentDialogue`
+- `String get currentDialogueType`
 
-### 4.2 非职责
+### 3.2 私有对话状态（实现细节）
 
-对话与 Tips 系统不负责：
+- `_currentDialogueQueue: List<String>`
+- `_currentDialogueIndex: int`
+- `_queuedDialogueTypes: List<String>`
+- `_lastInteractionAt: DateTime?`
+- `_idleTimer: Timer?`
 
-- 启动或结束番茄钟
-- 替代 `toggleTimer()` / `resetTimer()` 等现有控制逻辑
-- 重新定义当前倒计时、抽屉、日期等现有状态
-- 接管整个页面结构
+### 3.3 与番茄钟状态的职责拆分
 
-### 4.3 与番茄钟的关系
-
-对话系统是**依赖番茄钟事件的展示系统**，不是番茄钟主状态机。
-
-因此后续实现时应遵守：
-
-- 番茄钟状态变化仍由现有主流程驱动
-- 对话系统只订阅或响应这些状态变化
-- 不在 talking spec 中重复定义一套新的番茄钟核心流程
+- `pomodoroState`：业务阶段语义（`resting` / `studying`），供对话与陪伴行为判断。
+- `phaseStatus`：运行控制语义（`ready` / `running` / `paused`），供计时恢复与控制逻辑判断。
 
 ---
 
-## 5. 兼容性要求（哪些接口需要兼容）
+## 4. 触发类型与优先级
 
-### 5.1 必须兼容当前入口结构
+系统支持 5 种触发类型（字符串常量）：
 
-后续接入对话系统时，必须兼容当前入口结构：
+- `completed`（优先级 1，最高）
+- `start_focus`（优先级 2）
+- `resume`（优先级 3）
+- `clicked`（优先级 4）
+- `idle`（优先级 5，最低）
 
-- `lib/main.dart` 仍是默认入口
-- `MainStage` 仍负责创建 `AppController`
-- `UIWidgets` 仍是当前默认主界面承载层
+### 4.1 触发前置条件
 
-如果未来新增 `DialogueUI`、`CharacterView` 等模块，也应作为**增量接入**，不能假设当前结构已完成拆分。
+- 未知类型：拒绝触发。
+- `resume`：仅允许在 `pomodoroState == studying && phaseStatus == running`。
+- `start_focus`：仅允许在 `pomodoroState == studying`。
+- 其他类型：当 `pomodoroState == studying` 时拒绝触发。
 
-### 5.2 必须兼容当前控制器接口
+### 4.2 对话进行中仲裁规则
 
-后续新增对话能力时，不能破坏以下现有接口：
+若当前已在说话（`isTalking == true`）：
 
-- `remainingSeconds`
-- `isActive`
-- `isDrawerOpen`
-- `currentDate`
-- `toggleTimer()`
-- `resetTimer()`
-- `fetchHistoryData()`
-- `dispose()`
+1. 同级触发：忽略。
+2. 更低优先级（数字更大）：排队。
+3. `clicked` / `idle`（优先级大于 `resume`）统一排队，不打断当前对话。
+4. `completed` / `start_focus` / `resume` 可打断较低优先级对话。
 
-即：
-
-- 现有 UI 读取 `ValueNotifier` 的方式必须仍然可用
-- 当前主界面功能不能因为接入对话系统而失效
-- 对话系统应作为新增能力，而不是替换现有 controller 契约
-
-### 5.3 必须兼容当前资源现状
-
-在对话资源正式注册前，不应把任何对话 JSON 路径写成“当前已接入”。
-
-实现阶段需要补齐：
-
-1. 统一文案资源文件名
-2. 在 `pubspec.yaml` 注册资源
-3. 约定默认兜底文案
-
-### 5.4 必须兼容当前角色模块现状
-
-由于 `lib/character_view.dart` 当前尚未落地，对话系统第一阶段不应依赖它作为唯一入口。
-
-可接受的接入方式是：
-
-- 先在 `UIWidgets` 内渲染对话层
-- 后续角色模块成熟后，再把角色点击和动画联动迁移出去
+排队队列按类型去重，同一类型不会重复入队。
 
 ---
 
-## 6. 接口定义
+## 5. 公开接口契约
 
-### 6.1 接口定义归属
+### 5.1 生命周期相关
 
-本功能的接口定义分为两层：
+- `Future<void> initialize()`
+  - 恢复持久化状态。
+  - 初始化音频与通知。
+  - 启动 idle 计时。
+  - 异步预热对话资产加载。
 
-1. **文档层接口契约**
-   - 定义在 `docs/talking_interface_spec.md`
-   - 用于说明对话系统需要提供哪些状态、方法、触发类型和兼容约束
+- `Future<void> synchronizeWithCurrentTime()`
+  - App 返回前台后同步计时状态。
+  - 在专注中恢复时触发 `resume`；跨阶段则按恢复结果触发 `completed` 或继续专注。
 
-2. **代码层公开接口**
-   - 定义在 `lib/app_controller.dart`
-   - 用于承载运行时真正被 UI 调用的公开状态和方法
+- `void handleAppBackgrounded()`
+  - 标记后台并停止 idle 计时器。
 
-这两层的关系是：
+### 5.2 对话交互
 
-- spec 负责定义“**应该提供什么接口**”
-- `AppController` 负责定义“**代码实际暴露什么接口**”
+- `Future<void> triggerDialogue(String type)`
+  - 入口方法，做可触发判断、仲裁、加载文案、入场展示。
 
-### 6.2 文档层接口契约
+- `void nextDialogue()`
+  - 若当前句未结束队列则切下一句；到尾句则结束对话并尝试消费排队触发。
 
-从 spec 角度，对话与 Tips 系统至少需要定义以下接口类型：
+- `void skipDialogue()`
+  - 立即清空当前对话状态，随后尝试消费排队触发。
 
-#### 状态接口
-
-| 状态 | 说明 |
-| :-- | :-- |
-| `isTalking` | 当前是否正在显示对话 |
-| `currentDialogue` | 当前展示的文本 |
-| `currentTrigger` | 当前对话来自哪类触发 |
-| `dialogueQueue` | 当前待展示文案序列 |
-| `currentIndex` | 当前队列位置 |
-
-#### 方法接口
-
-| 方法 | 说明 |
-| :-- | :-- |
-| `triggerDialogue(...)` | 触发一轮对话 |
-| `nextDialogue()` | 切换到下一条 |
-| `skipDialogue()` | 结束当前对话 |
-| `handleAppResume()` | App 恢复时判断是否触发提示 |
-
-#### 触发类型接口
-
-| 触发类型 | 说明 |
-| :-- | :-- |
-| `clicked` | 用户主动点击角色或角色区域 |
-| `start_focus` | 用户开始专注时触发 |
-| `completed` | 一轮专注完成时触发 |
-| `resume` | App 恢复且仍处于专注流程中时触发 |
-| `idle` | 用户空闲超时时触发 |
-
-说明：
-
-- 文档层应统一术语，不应同时混用两套命名或两套参数表示。
-- 如果后续决定使用 `enum`，则整份文档都应按 `enum` 口径描述；如果使用字符串，同样应统一。
-
-### 6.3 代码层公开接口落点
-
-在当前仓库结构下，上述公开接口的代码落点应统一放在 `lib/app_controller.dart`。
-
-原因：
-
-- `lib/main.dart` 当前通过 `MainStage` 创建并注入 `AppController`
-- `lib/ui_widgets.dart` 当前通过读取 controller 状态和调用 controller 方法完成交互
-- 这意味着 `AppController` 已经是当前默认架构下的状态与行为入口
-
-因此后续新增对话能力时，应以“扩展 `AppController` 的公开状态 / 方法”为主，而不是在 UI 文件中重新定义一套业务接口。
-
-### 6.4 不负责定义业务接口的文件
-
-以下文件可以引用接口、消费接口、适配接口，但不应重复定义对话系统核心业务接口：
-
-| 文件 | 角色 | 不应承担的职责 |
-| :-- | :-- | :-- |
-| `lib/main.dart` | 入口与依赖注入 | 不重复定义业务状态和业务方法 |
-| `lib/ui_widgets.dart` | 读取状态、渲染 UI、触发调用 | 不成为接口真相源 |
-| `lib/character_view.dart` | 角色展示与交互适配 | 不单独定义对话系统核心契约 |
-
-### 6.5 接口变更原则
-
-后续如果调整对话系统接口，应同时满足：
-
-- spec 中的接口定义同步更新
-- `AppController` 中的公开接口同步更新
-- 不破坏当前番茄钟已有公开接口
-- 不让多个文件同时维护同一份业务接口真相
+- `void registerUserInteraction()`
+  - 刷新最后交互时间并重置 idle 计时。
 
 ---
 
-## 7. 目标能力（后续实现应提供什么）
+## 6. 文案资产契约
 
-### 7.1 最小能力集合
+### 6.1 实际路径
 
-后续实现至少应提供以下能力：
+- 资产路径：`assets/dialogues/dialogues.json`
+- `pubspec.yaml` 已注册目录：`assets/dialogues/`
 
-1. 接收触发事件
-2. 显示当前对话文案
-3. 支持关闭或跳过当前对话
-4. 支持多条文案顺序展示
-5. 支持基础优先级仲裁
-6. 支持没有资源文件时的兜底文案
+### 6.2 支持的数据格式
 
-### 7.2 最小状态模型
+每个触发类型值可混用以下格式：
 
-为了支持上述能力，系统至少需要表达以下状态：
+1. 字符串：`"line"`
+2. 数组：`[level?, "line1", "line2"]`
+3. 对象：`{"level": 2, "lines": ["line1", "line2"]}`
+   - 兼容键：`lines` / `dialogue` / `content`
 
-| 状态 | 说明 |
-| :-- | :-- |
-| `isTalking` | 当前是否正在显示对话 |
-| `currentDialogue` | 当前展示的文本 |
-| `currentTrigger` | 当前对话来自哪类触发 |
-| `dialogueQueue` | 当前待展示文案序列 |
-| `currentIndex` | 当前队列位置 |
+解析规则：
 
-说明：这些是**目标状态模型**，不是当前 `AppController` 已具备的事实。
+- `level` 缺省时默认为 1。
+- 空字符串和非法项会被清洗。
+- 候选句按 `requiredLevel <= 当前 level` 解锁。
+- 每次触发会随机抽取一组可用候选。
 
-### 7.3 最小公开接口
+### 6.3 fallback 规则
 
-后续实现建议至少提供以下公开能力：
+按顺序兜底：
 
-| 接口 | 作用 |
-| :-- | :-- |
-| `triggerDialogue(...)` | 触发一轮对话 |
-| `nextDialogue()` | 进入下一条 |
-| `skipDialogue()` | 结束当前对话 |
-| `handleAppResume()` | 处理 App 恢复时的对话判断 |
+1. 触发类型对应文案。
+2. `_fallback.default`。
+3. 内置文案（`_builtInDialogues`）。
+4. 最终兜底：`先继续当前节奏吧。`
 
-说明：
-- 具体参数类型可以在实现阶段冻结，但文档中应保持统一，不要同时混用 `String` 和 `enum` 两套表示。
-- 若存在私有实现入口，应与公开接口严格区分，不在 spec 中混写。
+若候选存在但当前等级全部未解锁，返回空队列并不展示对话。
+
+### 6.4 开发期刷新策略
+
+`triggerDialogue` 内部会调用 `forceReload: true` 的资产读取逻辑。开发时修改 JSON 后，下一次触发会重新读取，不依赖重启应用。
 
 ---
 
-## 8. 触发规则
+## 7. Idle 对话规则
 
-### 8.1 基本触发规则
-
-| 触发类型 | 来源 | 是否属于第一阶段必须支持 |
-| :-- | :-- | :-- |
-| `clicked` | 用户点击角色或角色区域 | 是 |
-| `start_focus` | 开始专注 | 是 |
-| `completed` | 专注结束 | 是 |
-| `resume` | App 恢复 | 是 |
-| `idle` | 用户空闲超时 | 否，可后补 |
-
-说明：`idle` 依赖空闲检测策略，当前仓库还没有统一定义，允许作为第二阶段能力接入。
-
-### 8.2 优先级原则
-
-建议按以下优先级处理：
-
-| 优先级 | 触发类型 | 原则 |
-| :-- | :-- | :-- |
-| P1 | `completed` | 优先覆盖低优先级提示 |
-| P2 | `resume` | 高于被动提示 |
-| P3 | `start_focus` | 作为状态切换提示 |
-| P4 | `clicked` | 用户主动触发 |
-| P5 | `idle` | 最低优先级 |
-
-### 8.3 仲裁要求
-
-后续实现时必须明确并保持一致：
-
-- 对话展示中收到更高优先级触发时，是否覆盖当前对话：仅P1,P2,P3可覆盖更低优先级对话
-- 对话展示中收到同级或更低优先级触发时，是否忽略或排队：同级忽略，更低级排队
-- 用户主动 `skip` 后，是否允许同类提示立即再次弹出：不允许
-
-本文档当前只冻结原则，不冻结具体实现策略；实现时需要在代码与文档中保持一致。
-
-### 8.4 关于 `start_focus` 的特殊说明
-
-`start_focus` 属于“开始专注时的状态切换提示”，不能简单套用“专注中禁止普通新对话”的规则。
-因此后续实现时应将它视为**状态切换事件附带提示**，而不是普通的 resting / studying 内部随机对话。
-
-这条规则用于避免以下歧义：
-
-- 一边说“进入 studying 后禁止新对话”
-- 一边又要求“开始专注时弹出提示”
+- 超时常量：`kIdleDialogueTimeout = 60s`。
+- 仅在以下条件同时满足时启动 idle 计时：
+  - 前台状态
+  - `pomodoroState == resting`
+  - 当前不在说话
+- 触发后调用 `triggerDialogue('idle')`。
+- 任意用户交互或状态变更会刷新/重置 idle 计时。
 
 ---
 
-## 9. UI 需求
+## 8. UI 消费契约
 
-### 9.1 基本展示需求
+`UIWidgets` 当前行为：
 
-对话 UI 至少需要支持：
+- 空白区域点击：
+  - 正在对话 -> `nextDialogue()`
+  - 非对话 -> `registerUserInteraction()`
+- 角色点击：`triggerDialogue('clicked')`
+- 气泡展示：当 `isTalking == true` 时渲染 `ChatBubble`
 
-- 显示当前文本
-- 显示 / 隐藏状态切换
-- 用户手动关闭
-- 用户切到下一条
+`ChatBubble` 当前行为：
 
-### 9.2 与现有 UI 的兼容要求
-
-接入方式应满足：
-
-- 不阻断当前主界面基础交互
-- 不破坏现有 Dock / Drawer / 统计区布局
-- 即使角色模块未正式落地，也能在当前界面中展示对话内容
-
-### 9.3 点击行为要求
-
-至少需要区分以下几类区域：
-
-- Skip / Close 按钮
-- 当前对话气泡区域
-- 气泡外空白区域
-- 现有业务按钮区域
-
-具体点击命中顺序可以在实现阶段细化，但必须避免文档与实现出现冲突。
+- 打字机速度：80ms/字。
+- 文本未打完时点击：立即补全并开始自动下一句计时。
+- 文本打完后 8 秒自动 `onNext()`。
+- 右下角快进按钮执行 `onSkip()`。
 
 ---
 
-## 10. 资源需求
+## 9. 已知边界
 
-### 10.1 文案来源
-
-对话与 Tips 文案应支持外部资源配置，以便后续替换和扩充。
-
-推荐做法：
-
-- 将文案存储在 `assets/dialogue.json`中
-- 文件名在实现阶段统一冻结
-- 注册到 `pubspec.yaml`
-- 提供加载失败时的默认兜底文案
-
-### 10.2 当前状态说明
-
-截至本文档版本：
-
-- 文案资源路径尚未冻结
--  `assets/dialogue.json`尚未创建，也尚未在`pubspec.yaml` 注册
+- `character_view.dart` 仍为占位实现，对话触发入口当前以 `UIWidgets` 为准。
+- 对话锁定文案按“候选句 level”解锁，不是按类型整体解锁。
+- 对话系统不负责定义 Live2D 动作和口型策略。
 
 ---
 
-## 11. 实现验收标准
+## 10. 变更要求
 
-当该功能进入实现阶段后，至少应满足以下验收条件：
+若改动以下内容，必须同步更新本文档：
 
-1. 当前默认入口仍可运行
-2. 现有 `UIWidgets` 主流程不被破坏
-3. 至少支持 `clicked / start_focus / completed / resume` 四类触发
-4. 对话文案可显示、可关闭、可切下一条
-5. 无资源文件时仍有兜底文案
-6. 文档中的接口命名、触发规则、优先级原则与实现保持一致
-
----
-
-## 12. 参考基线
-
-当前与本 spec 直接相关的基线文件：
-
-- `lib/main.dart`
-- `lib/app_controller.dart`
-- `lib/ui_widgets.dart`
-- `lib/character_view.dart`
-- `pubspec.yaml`
-- `openspec/changes/improve-pomodoro-functionality/design.md`
-
----
-
-> **文档结束**
-> 本文档用于定义对话与 Tips 系统的目标、现状与兼容要求；如需补充实现细节，应在不违背本文约束的前提下另行细化。
+- 触发类型名称或优先级
+- `triggerDialogue` 仲裁策略
+- 文案 JSON 结构与路径
+- `ChatBubble` 自动前进时序
+- `synchronizeWithCurrentTime` 触发行为

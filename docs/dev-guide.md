@@ -13,17 +13,15 @@
 - `MainStage` 创建并注入 `AppController`
 - `UIWidgets` 负责主界面展示与交互
 
-当前代码并不是“完整功能版”，仍有若干占位实现和待补逻辑。项目当前已进入为期 1 周的正式快速开发阶段，当前优先级是前端主流程与基础后端尽快落地，复杂后端能力为次要。开始改代码前，先接受这几个现状：
+当前代码并不是“完整功能版”，但主流程已具备可运行能力。项目当前已进入为期 1 周的正式快速开发阶段，当前优先级是前端主流程与基础后端尽快落地，复杂后端能力为次要。开始改代码前，先接受这几个现状：
 
-1. `lib/app_controller.dart` 已经定义了状态接口，但核心方法仍是空实现：
-   - `toggleTimer()`
-   - `resetTimer()`
-   - `fetchHistoryData()`
-2. `lib/ui_widgets.dart` 承担了当前大部分可见 UI 和交互。
-3. 顶部进度条目前使用 UI 内部的假进度动画驱动，不等于真实番茄钟进度。
-4. `lib/character_view.dart` 目前还是 stub，还没有真正接入角色动画。
-5. `lib/live2d.dart` 是独立实验原型，不是默认应用入口。
-6. Android 端已经被锁定为横屏。
+1. `lib/app_controller.dart` 已包含番茄钟状态机、持久化恢复、对话触发、音频与监督提醒主流程。
+2. `fetchHistoryData()` 仍是兼容占位接口，历史统计细节尚未补齐。
+3. `lib/ui_widgets.dart` 承担了当前大部分可见 UI 和交互。
+4. 顶部进度圈已绑定 controller 的真实剩余时间和阶段总时长，不再是演示假进度。
+5. `lib/character_view.dart` 目前仍是占位实现，角色动画联动尚未正式落地。
+6. `lib/live2d.dart` 是独立实验原型，不是默认应用入口。
+7. Android 端已经被锁定为横屏。
 
 ## 2. 环境准备
 
@@ -142,12 +140,9 @@ lib/
 
 特别注意：
 
-- 顶部 `LinearProgressIndicator` 当前绑定的是 `_fakeProgress`
-- `_fakeProgress` 由 `_fakeTimer` 每 100ms 增长一次
-- 它只是演示动画，不代表真实 25 分钟进度
-- Reset 按钮现在同时重置 controller 和 UI 假进度
-
-如果你后续要实现真实计时逻辑，应该让 `AppController` 成为单一事实来源，并协调或移除这条假进度路径。
+- 顶部番茄钟进度展示基于 `remainingSeconds` 与 `currentPhaseDurationSeconds` 计算
+- 时间与阶段切换的单一事实源在 `AppController`
+- UI 层主要负责展示和交互转发，不应重复维护计时状态
 
 ## 6. 各核心文件应该怎么改
 
@@ -162,14 +157,14 @@ lib/
 
 ### `lib/app_controller.dart`
 
-如果你负责逻辑层，优先在这里实现：
+如果你负责逻辑层，优先在这里扩展：
 
-- 开始/暂停计时
-- 重置计时
-- 历史数据读取
-- 后续对话状态或统计状态的统一管理
+- 历史数据读取与统计落盘
+- 对话触发策略和文案解锁规则
+- 音频、监督提醒与生命周期联动
+- 与 UI 的状态契约稳定性
 
-当前这几个方法还是 TODO：
+当前仍保留占位的方法：
 
 - `toggleTimer()`
 - `resetTimer()`
@@ -215,8 +210,8 @@ lib/
 
 - 它不是默认入口
 - 它使用了 `webview_flutter` 和 `webview_flutter_android`
-- 但这两个依赖目前没有在 `pubspec.yaml` 中声明
-- Live2D 相关资源目前也没有注册到 `flutter.assets`
+- 相关依赖和资源目录已在 `pubspec.yaml` 注册
+- 但它仍不是默认入口，运行/分析问题要区分主流程与实验原型
 
 因此，如果你运行 `flutter analyze` 或尝试切到这个原型，报错不一定和你当前正在改的主界面有关。
 
@@ -268,7 +263,8 @@ flutter analyze
 flutter test
 ```
 
-当前仓库还没有成熟的测试目录，测试命令更像是后续补充测试时的基础入口。
+仓库已有 `test/` 目录，并包含 `app_controller_*` 与 `chat_bubble_test.dart` 等测试。
+如果你修改了计时、对话、音频或等级逻辑，建议至少本地执行一次 `flutter test`。
 
 ### 构建 APK
 
@@ -336,14 +332,14 @@ git push origin feat/your-change
 - `CLAUDE.md`：仓库级开发说明，和当前代码状态最一致
 - `openspec/changes/improve-pomodoro-functionality/design.md`：番茄钟权威设计边界
 - `openspec/changes/improve-pomodoro-functionality/specs/`：番茄钟冻结行为契约
-- `docs/talking_interface_spec.md`：对话相关接口设想
+- `docs/talking_interface_spec.md`：对话系统当前实现契约
 
 如果某份旧文档和代码冲突，请以当前代码实现为准。
 
 ## 12. 新同学最容易踩的坑
 
-1. 以为番茄钟已经有完整逻辑：其实 `AppController` 里的核心行为还是 TODO。
-2. 以为顶部进度条是真实倒计时：其实现在还是 UI 假动画。
+1. 以为对话系统还没接入：当前对话触发、仲裁、文案加载已经在 `AppController` 生效。
+2. 以为顶部进度条是演示动画：当前进度已和 controller 状态联动。
 3. 以为 `character_view.dart` 已经能接角色动画：其实还没有正式实现。
 4. 以为 `live2d.dart` 是主入口：其实默认入口仍然是 `lib/main.dart`。
 5. 以为文档里的旧绝对路径还能直接用：现在统一以仓库根目录为准。

@@ -50,6 +50,8 @@ enum _PhaseSfxType { start, encouragement }
 
 enum _UiSfxType { open, back }
 
+enum _DialogueArbitration { interrupt, queue, ignore }
+
 const Duration _kUiSfxAnyTypeCooldown = Duration(milliseconds: 180);
 const Duration _kUiSfxSameTypeDedupWindow = Duration(milliseconds: 320);
 
@@ -171,6 +173,13 @@ class _PhaseAdvanceResult {
   final bool exitedStudyingRunning;
 }
 
+class _DialogueCandidate {
+  const _DialogueCandidate({required this.requiredLevel, required this.lines});
+
+  final int requiredLevel;
+  final List<String> lines;
+}
+
 class AppController extends ChangeNotifier {
   AppController({
     int initialSeconds = kDefaultPomodoroSeconds,
@@ -216,13 +225,38 @@ class AppController extends ChangeNotifier {
     'idle': 5,
   };
 
-  static const Map<String, List<String>> _builtInDialogues =
-      <String, List<String>>{
-        'start_focus': <String>['开始今天这一轮专注吧。', '我会在这里陪着你。'],
-        'completed': <String>['这一轮做得不错，先休息一下。', '记得活动活动肩膀。'],
-        'resume': <String>['欢迎回来，专注还在继续。', '我们接着刚才的节奏。'],
-        'clicked': <String>['嗯？你是在叫我吗？', '现在适合整理一下接下来的安排。'],
-        'idle': <String>['休息太久的话，节奏会散掉哦。', '要不要开始下一轮？'],
+  static const Map<String, List<_DialogueCandidate>> _builtInDialogues =
+      <String, List<_DialogueCandidate>>{
+        'start_focus': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 1,
+            lines: <String>['开始今天这一轮专注吧。', '我会在这里陪着你。'],
+          ),
+        ],
+        'completed': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 1,
+            lines: <String>['这一轮做得不错，先休息一下。', '记得活动活动肩膀。'],
+          ),
+        ],
+        'resume': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 1,
+            lines: <String>['欢迎回来，专注还在继续。', '我们接着刚才的节奏。'],
+          ),
+        ],
+        'clicked': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 2,
+            lines: <String>['嗯？你是在叫我吗？', '现在适合整理一下接下来的安排。'],
+          ),
+        ],
+        'idle': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 4,
+            lines: <String>['休息太久的话，节奏会散掉哦。', '要不要开始下一轮？'],
+          ),
+        ],
       };
 
   final ValueNotifier<int> remainingSeconds;
@@ -268,12 +302,19 @@ class AppController extends ChangeNotifier {
   String _currentDialogueType = '';
   List<String> _currentDialogueQueue = <String>[];
   int _currentDialogueIndex = 0;
-  Map<String, List<String>>? _dialoguesFromAssets;
-  Future<Map<String, List<String>>>? _dialogueLoadTask;
+  final List<String> _queuedDialogueTypes = <String>[];
+  Map<String, List<_DialogueCandidate>>? _dialoguesFromAssets;
+  Future<Map<String, List<_DialogueCandidate>>>? _dialogueLoadTask;
 
   bool get isTalking => _isTalking;
   String get currentDialogue => _currentDialogue;
   String get currentDialogueType => _currentDialogueType;
+  bool get isCurrentDialogueLastLine {
+    if (!_isTalking || _currentDialogueQueue.isEmpty) {
+      return false;
+    }
+    return _currentDialogueIndex == _currentDialogueQueue.length - 1;
+  }
 
   static String _formatCurrentDate() {
     final DateTime now = DateTime.now();
@@ -565,9 +606,12 @@ class AppController extends ChangeNotifier {
     }
 
     if (_isTalking) {
-      final int currentPriority = _getDialoguePriority(_currentDialogueType);
-      final int newPriority = _getDialoguePriority(type);
-      if (newPriority >= currentPriority) {
+      final _DialogueArbitration arbitration = _arbitrateWhenTalking(type);
+      if (arbitration == _DialogueArbitration.ignore) {
+        return;
+      }
+      if (arbitration == _DialogueArbitration.queue) {
+        _enqueueDialogueType(type);
         return;
       }
     }
@@ -582,9 +626,12 @@ class AppController extends ChangeNotifier {
     }
 
     if (_isTalking) {
-      final int currentPriority = _getDialoguePriority(_currentDialogueType);
-      final int newPriority = _getDialoguePriority(type);
-      if (newPriority >= currentPriority) {
+      final _DialogueArbitration arbitration = _arbitrateWhenTalking(type);
+      if (arbitration == _DialogueArbitration.ignore) {
+        return;
+      }
+      if (arbitration == _DialogueArbitration.queue) {
+        _enqueueDialogueType(type);
         return;
       }
     }
@@ -616,6 +663,14 @@ class AppController extends ChangeNotifier {
     if (!_isTalking &&
         _currentDialogueQueue.isEmpty &&
         _currentDialogueType.isEmpty) {
+      return;
+    }
+
+    _exitDialogue();
+  }
+
+  void autoDismissDialogue() {
+    if (!_isTalking) {
       return;
     }
 
@@ -733,6 +788,16 @@ class AppController extends ChangeNotifier {
   }
 
   bool canUnlockDialogue(int requiredLevel) => level.value >= requiredLevel;
+
+  int requiredDialogueLevel(String type) => _requiredDialogueLevel(type);
+
+  bool isDialogueTypeUnlocked(String type) {
+    return canUnlockDialogue(_requiredDialogueLevel(type));
+  }
+
+  String dialogueTypeLockReason(String type) {
+    return dialogueLockReason(_requiredDialogueLevel(type));
+  }
 
   String dialogueLockReason(int requiredLevel) {
     if (canUnlockDialogue(requiredLevel)) {
@@ -1144,27 +1209,93 @@ class AppController extends ChangeNotifier {
   }
 
   Future<List<String>> _loadDialogueQueue(String type) async {
-    final Map<String, List<String>> dialogues = await _ensureDialoguesLoaded();
-    final List<String>? directQueue = dialogues[type];
-    if (directQueue != null && directQueue.isNotEmpty) {
-      return List<String>.of(directQueue);
+    final Map<String, List<_DialogueCandidate>> dialogues =
+        await _ensureDialoguesLoaded(forceReload: true);
+
+    final List<_DialogueCandidate>? directCandidates = dialogues[type];
+    if (directCandidates != null && directCandidates.isNotEmpty) {
+      return _pickUnlockedDialogueQueue(directCandidates);
     }
 
-    final List<String>? assetFallback = dialogues['_fallback.default'];
+    final List<_DialogueCandidate>? assetFallback =
+        dialogues['_fallback.default'];
     if (assetFallback != null && assetFallback.isNotEmpty) {
-      return List<String>.of(assetFallback);
+      return _pickUnlockedDialogueQueue(assetFallback);
     }
 
-    final List<String>? builtInQueue = _builtInDialogues[type];
-    if (builtInQueue != null && builtInQueue.isNotEmpty) {
-      return List<String>.of(builtInQueue);
+    final List<_DialogueCandidate>? builtInCandidates = _builtInDialogues[type];
+    if (builtInCandidates != null && builtInCandidates.isNotEmpty) {
+      return _pickUnlockedDialogueQueue(builtInCandidates);
     }
 
     return List<String>.of(_kDefaultDialogueFallback);
   }
 
+  List<String> _pickUnlockedDialogueQueue(List<_DialogueCandidate> candidates) {
+    final int currentLevel = level.value;
+    final List<_DialogueCandidate> unlockedCandidates = candidates
+        .where(
+          (_DialogueCandidate candidate) =>
+              candidate.lines.isNotEmpty &&
+              currentLevel >= candidate.requiredLevel,
+        )
+        .toList(growable: false);
+    if (unlockedCandidates.isEmpty) {
+      return const <String>[];
+    }
+
+    final int randomIndex = Random().nextInt(unlockedCandidates.length);
+    return List<String>.of(unlockedCandidates[randomIndex].lines);
+  }
+
+  int _requiredDialogueLevel(String type) {
+    final List<_DialogueCandidate>? directCandidates =
+        _dialoguesFromAssets?[type];
+    if (directCandidates != null && directCandidates.isNotEmpty) {
+      return _minRequiredDialogueLevel(directCandidates);
+    }
+
+    final List<_DialogueCandidate>? builtInCandidates = _builtInDialogues[type];
+    if (builtInCandidates != null && builtInCandidates.isNotEmpty) {
+      return _minRequiredDialogueLevel(builtInCandidates);
+    }
+
+    return 1;
+  }
+
+  int _minRequiredDialogueLevel(List<_DialogueCandidate> candidates) {
+    return candidates.map((candidate) => candidate.requiredLevel).reduce(min);
+  }
+
   int _getDialoguePriority(String type) {
     return _dialoguePriority[type] ?? 999;
+  }
+
+  _DialogueArbitration _arbitrateWhenTalking(String incomingType) {
+    final int currentPriority = _getDialoguePriority(_currentDialogueType);
+    final int incomingPriority = _getDialoguePriority(incomingType);
+
+    if (incomingPriority == currentPriority) {
+      return _DialogueArbitration.ignore;
+    }
+
+    if (incomingPriority > currentPriority) {
+      return _DialogueArbitration.queue;
+    }
+
+    if (incomingPriority > _getDialoguePriority('resume')) {
+      return _DialogueArbitration.queue;
+    }
+
+    return _DialogueArbitration.interrupt;
+  }
+
+  void _enqueueDialogueType(String type) {
+    if (_queuedDialogueTypes.contains(type)) {
+      return;
+    }
+
+    _queuedDialogueTypes.add(type);
   }
 
   bool _canTriggerDialogue(String type) {
@@ -1245,6 +1376,14 @@ class AppController extends ChangeNotifier {
     _clearDialogueState();
     notifyListeners();
     _refreshIdleTimer();
+    unawaited(_drainQueuedDialogues());
+  }
+
+  Future<void> _drainQueuedDialogues() async {
+    while (!_isTalking && _queuedDialogueTypes.isNotEmpty) {
+      final String nextType = _queuedDialogueTypes.removeAt(0);
+      await triggerDialogue(nextType);
+    }
   }
 
   void _clearDialogueState() {
@@ -1255,7 +1394,14 @@ class AppController extends ChangeNotifier {
     _currentDialogueIndex = 0;
   }
 
-  Future<Map<String, List<String>>> _ensureDialoguesLoaded() async {
+  Future<Map<String, List<_DialogueCandidate>>> _ensureDialoguesLoaded({
+    bool forceReload = false,
+  }) async {
+    if (forceReload) {
+      _dialoguesFromAssets = null;
+      _dialogueLoadTask = null;
+    }
+
     if (_dialoguesFromAssets != null) {
       return _dialoguesFromAssets!;
     }
@@ -1264,28 +1410,30 @@ class AppController extends ChangeNotifier {
     }
 
     _dialogueLoadTask = _readDialoguesFromAssets();
-    final Map<String, List<String>> dialogues = await _dialogueLoadTask!;
+    final Map<String, List<_DialogueCandidate>> dialogues =
+        await _dialogueLoadTask!;
     _dialoguesFromAssets = dialogues;
     _dialogueLoadTask = null;
     return dialogues;
   }
 
-  Future<Map<String, List<String>>> _readDialoguesFromAssets() async {
+  Future<Map<String, List<_DialogueCandidate>>>
+  _readDialoguesFromAssets() async {
     try {
       final String raw = await rootBundle.loadString(_kDialogueAssetPath);
       final dynamic decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
-        return <String, List<String>>{};
+        return <String, List<_DialogueCandidate>>{};
       }
 
-      final Map<String, List<String>> result = <String, List<String>>{};
+      final Map<String, List<_DialogueCandidate>> result =
+          <String, List<_DialogueCandidate>>{};
       for (final MapEntry<String, dynamic> entry in decoded.entries) {
         if (entry.key == '_fallback') {
           final dynamic fallback = entry.value;
           if (fallback is Map<String, dynamic>) {
-            final List<String> fallbackQueue = _sanitizeDialogueList(
-              fallback['default'],
-            );
+            final List<_DialogueCandidate> fallbackQueue =
+                _sanitizeDialogueCandidates(fallback['default']);
             if (fallbackQueue.isNotEmpty) {
               result['_fallback.default'] = fallbackQueue;
             }
@@ -1293,19 +1441,136 @@ class AppController extends ChangeNotifier {
           continue;
         }
 
-        final List<String> queue = _sanitizeDialogueList(entry.value);
+        final List<_DialogueCandidate> queue = _sanitizeDialogueCandidates(
+          entry.value,
+        );
         if (queue.isNotEmpty) {
           result[entry.key] = queue;
         }
       }
       return result;
     } on FlutterError {
-      return <String, List<String>>{};
+      return <String, List<_DialogueCandidate>>{};
     } on FormatException {
-      return <String, List<String>>{};
+      return <String, List<_DialogueCandidate>>{};
     } on TypeError {
-      return <String, List<String>>{};
+      return <String, List<_DialogueCandidate>>{};
     }
+  }
+
+  List<_DialogueCandidate> _sanitizeDialogueCandidates(dynamic source) {
+    if (source is! List<dynamic>) {
+      return const <_DialogueCandidate>[];
+    }
+
+    final List<_DialogueCandidate> candidates = <_DialogueCandidate>[];
+    final List<String> flatQueue = <String>[];
+
+    for (final dynamic item in source) {
+      if (item is List<dynamic>) {
+        final _DialogueCandidate? candidate = _dialogueCandidateFromArray(item);
+        if (candidate != null) {
+          candidates.add(candidate);
+        }
+        continue;
+      }
+
+      if (item is Map<String, dynamic>) {
+        final _DialogueCandidate? candidate = _dialogueCandidateFromMap(item);
+        if (candidate != null) {
+          candidates.add(candidate);
+        }
+        continue;
+      }
+
+      if (item is String) {
+        final String trimmed = item.trim();
+        if (trimmed.isNotEmpty) {
+          flatQueue.add(trimmed);
+        }
+      }
+    }
+
+    if (candidates.isEmpty && flatQueue.isNotEmpty) {
+      candidates.add(
+        _DialogueCandidate(
+          requiredLevel: 1,
+          lines: List<String>.of(flatQueue, growable: false),
+        ),
+      );
+    }
+
+    if (candidates.isNotEmpty && flatQueue.isNotEmpty) {
+      candidates.insert(
+        0,
+        _DialogueCandidate(
+          requiredLevel: 1,
+          lines: List<String>.of(flatQueue, growable: false),
+        ),
+      );
+    }
+
+    return candidates;
+  }
+
+  _DialogueCandidate? _dialogueCandidateFromArray(List<dynamic> source) {
+    if (source.isEmpty) {
+      return null;
+    }
+
+    int requiredLevel = 1;
+    int startIndex = 0;
+    final int? parsedLevel = _parsePositiveLevel(source.first);
+    if (parsedLevel != null) {
+      requiredLevel = parsedLevel;
+      startIndex = 1;
+    }
+
+    if (startIndex >= source.length) {
+      return null;
+    }
+
+    final List<String> lines = source
+        .skip(startIndex)
+        .whereType<String>()
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+    if (lines.isEmpty) {
+      return null;
+    }
+
+    return _DialogueCandidate(requiredLevel: requiredLevel, lines: lines);
+  }
+
+  _DialogueCandidate? _dialogueCandidateFromMap(Map<String, dynamic> source) {
+    final int requiredLevel = _parsePositiveLevel(source['level']) ?? 1;
+    final dynamic linesSource =
+        source['lines'] ?? source['dialogue'] ?? source['content'];
+    final List<String> lines = _sanitizeDialogueList(linesSource);
+    if (lines.isEmpty) {
+      return null;
+    }
+
+    return _DialogueCandidate(requiredLevel: requiredLevel, lines: lines);
+  }
+
+  int? _parsePositiveLevel(dynamic source) {
+    if (source is int) {
+      return source > 0 ? source : null;
+    }
+    if (source is num) {
+      final int level = source.toInt();
+      return level > 0 ? level : null;
+    }
+    if (source is String) {
+      final int? parsed = int.tryParse(source.trim());
+      if (parsed != null && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return null;
   }
 
   List<String> _sanitizeDialogueList(dynamic source) {

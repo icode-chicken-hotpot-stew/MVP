@@ -425,7 +425,7 @@
         const SAFE_TOP_PADDING_PX = 16;
         const MAX_TOP_CLAMP_PX = 48;
         const MODEL_SCALE = 0.24;
-        const TAP_ZONE_WIDTH_RATIO = 0.35;
+        const TAP_ZONE_WIDTH_RATIO = 0.65;
         const TAP_ZONE_HEIGHT_RATIO = 0.86;
         let _externalOffsetX = 0;
         let _externalOffsetY = 0;
@@ -742,7 +742,7 @@
                     preserveDrawingBuffer: false,
                     powerPreference: 'high-performance'
                 });
-                
+
                 // 确保 canvas 元素完全透明
                 const canvas = document.getElementById('canvas');
                 if (canvas) {
@@ -980,9 +980,10 @@
                 model.on('pointertap', (event) => {
                     if (!isPointerWithinTapZone(event)) {
                         return;
+                    }
+
                     updateStatus('Model clicked!');
                     postBridgeMessage('character_tap');
-                    }
                     triggerSmileMotion();
                 });
 

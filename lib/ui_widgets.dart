@@ -221,14 +221,12 @@ class _UIWidgetsState extends State<UIWidgets> {
           return const SizedBox.shrink();
         }
 
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {},
-          child: ChatBubble(
-            text: widget.controller.currentDialogue,
-            onNext: widget.controller.nextDialogue,
-            onSkip: widget.controller.skipDialogue,
-          ),
+        return ChatBubble(
+          text: widget.controller.currentDialogue,
+          isLastLine: widget.controller.isCurrentDialogueLastLine,
+          onNext: widget.controller.nextDialogue,
+          onSkip: widget.controller.skipDialogue,
+          onAutoDismiss: widget.controller.autoDismissDialogue,
         );
       },
     );
@@ -252,7 +250,7 @@ class _UIWidgetsState extends State<UIWidgets> {
       backgroundColor: Colors.transparent,
       body: GestureDetector(
         onTap: _handleBlankTap,
-        behavior: HitTestBehavior.translucent,
+        behavior: HitTestBehavior.deferToChild,
         child: Stack(
           children: [
             Positioned.fill(child: _buildStageBackground()),
@@ -1010,14 +1008,18 @@ void _showShareCard(BuildContext context, AppController controller) {
 
 class ChatBubble extends StatefulWidget {
   final String text;
+  final bool isLastLine;
   final VoidCallback onNext;
   final VoidCallback onSkip;
+  final VoidCallback onAutoDismiss;
 
   const ChatBubble({
     super.key,
     required this.text,
+    required this.isLastLine,
     required this.onNext,
     required this.onSkip,
+    required this.onAutoDismiss,
   });
 
   @override
@@ -1027,7 +1029,23 @@ class ChatBubble extends StatefulWidget {
 class _ChatBubbleState extends State<ChatBubble> {
   String _displayedText = '';
   Timer? _timer;
+  Timer? _autoDismissTimer;
   int _charIndex = 0;
+
+  void _handleBubbleTap() {
+    if (_charIndex < widget.text.length) {
+      _timer?.cancel();
+      setState(() {
+        _charIndex = widget.text.length;
+        _displayedText = widget.text;
+      });
+      _scheduleAutoDismissIfNeeded();
+      return;
+    }
+
+    _cancelAutoDismissTimer();
+    widget.onNext();
+  }
 
   @override
   void initState() {
@@ -1040,30 +1058,66 @@ class _ChatBubbleState extends State<ChatBubble> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.text != widget.text) {
       _startTypewriterEffect();
+      return;
+    }
+
+    if (oldWidget.isLastLine != widget.isLastLine) {
+      _scheduleAutoDismissIfNeeded();
     }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _cancelAutoDismissTimer();
     super.dispose();
   }
 
   void _startTypewriterEffect() {
     _timer?.cancel();
+    _cancelAutoDismissTimer();
     setState(() {
       _displayedText = '';
       _charIndex = 0;
     });
     _timer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
-      if (_charIndex < widget.text.length) {
-        setState(() {
-          _charIndex++;
-          _displayedText = widget.text.substring(0, _charIndex);
-        });
-      } else {
+      if (_charIndex >= widget.text.length) {
         timer.cancel();
+        return;
       }
+
+      setState(() {
+        _charIndex++;
+        _displayedText = widget.text.substring(0, _charIndex);
+      });
+
+      if (_charIndex >= widget.text.length) {
+        timer.cancel();
+        _scheduleAutoDismissIfNeeded();
+      }
+    });
+  }
+
+  void _cancelAutoDismissTimer() {
+    _autoDismissTimer?.cancel();
+    _autoDismissTimer = null;
+  }
+
+  void _scheduleAutoDismissIfNeeded() {
+    _cancelAutoDismissTimer();
+
+    if (!widget.isLastLine || _charIndex < widget.text.length) {
+      return;
+    }
+
+    _autoDismissTimer = Timer(const Duration(seconds: 8), () {
+      if (!mounted) {
+        return;
+      }
+      if (!widget.isLastLine || _charIndex < widget.text.length) {
+        return;
+      }
+      widget.onAutoDismiss();
     });
   }
 
@@ -1080,51 +1134,55 @@ class _ChatBubbleState extends State<ChatBubble> {
           child: Opacity(opacity: scale.clamp(0.0, 1.0), child: child),
         );
       },
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 240, minHeight: 60),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFFDF8),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 10,
-              offset: Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _displayedText,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    height: 1.4,
-                    color: Color(0xFF5D4037),
-                    fontFamily: 'ZCOOLKuaiLe-Regular',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _handleBubbleTap,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 240, minHeight: 60),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFDF8),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 10,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _displayedText,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.4,
+                      color: Color(0xFF5D4037),
+                      fontFamily: 'ZCOOLKuaiLe-Regular',
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                ],
+              ),
+              Positioned(
+                bottom: -5,
+                right: -5,
+                child: GestureDetector(
+                  onTap: widget.onSkip,
+                  child: const Icon(
+                    Icons.fast_forward_rounded,
+                    size: 20,
+                    color: Colors.grey,
                   ),
                 ),
-                const SizedBox(height: 15),
-              ],
-            ),
-            Positioned(
-              bottom: -5,
-              right: -5,
-              child: GestureDetector(
-                onTap: widget.onSkip,
-                child: const Icon(
-                  Icons.fast_forward_rounded,
-                  size: 20,
-                  color: Colors.grey,
-                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

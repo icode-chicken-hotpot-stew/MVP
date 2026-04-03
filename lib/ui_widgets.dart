@@ -52,7 +52,10 @@ class _UIWidgetsState extends State<UIWidgets> {
     if (total <= 0) {
       return 0;
     }
-    final int remaining = widget.controller.remainingSeconds.value.clamp(0, total);
+    final int remaining = widget.controller.remainingSeconds.value.clamp(
+      0,
+      total,
+    );
     // 使用“剩余/总时长”作为进度显示，使进度条随时间减少而变短。
     return (remaining / total).clamp(0.0, 1.0);
   }
@@ -113,7 +116,10 @@ class _UIWidgetsState extends State<UIWidgets> {
     final String secondsText = (safeSeconds % 60).toString().padLeft(2, '0');
 
     if (totalHours <= 0) {
-      final String shortMinutesText = (safeSeconds ~/ 60).toString().padLeft(2, '0');
+      final String shortMinutesText = (safeSeconds ~/ 60).toString().padLeft(
+        2,
+        '0',
+      );
       return '$shortMinutesText:$secondsText';
     }
 
@@ -276,38 +282,42 @@ class _UIWidgetsState extends State<UIWidgets> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () {
-          if (!_isInteractingWithVolume) {
-            _closeAllPanels();
-          }
-        },
-        child: Stack(
-          children: [
-            Positioned.fill(child: _buildCharacterStage(context)),
-            Positioned(
-              bottom: 120,
-              right: 40,
-              child: ValueListenableBuilder<int>(
-                valueListenable: widget.controller.level,
-                builder: (context, level, _) {
-                  return ChatBubble(
-                    text: widget.controller.dialogueLockReason(level + 1),
-                    onNext: () {},
-                    onSkip: () {},
-                  );
-                },
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            if (!_isInteractingWithVolume) {
+              _closeAllPanels();
+            }
+          },
+          child: Stack(
+            children: [
+              Positioned.fill(child: _buildCharacterStage(context)),
+              Positioned(
+                bottom: 120,
+                right: 40,
+                child: ValueListenableBuilder<int>(
+                  valueListenable: widget.controller.level,
+                  builder: (context, level, _) {
+                    return ChatBubble(
+                      text: widget.controller.dialogueLockReason(level + 1),
+                      onNext: () {},
+                      onSkip: () {},
+                    );
+                  },
+                ),
               ),
-            ),
-            Positioned(top: 15, left: 20, child: _buildTomatoTimerDrop()),
-            Positioned(top: 20, left: 50, child: _buildExpBarDrop()),
-            Positioned(top: 15, right: 28, child: _buildBlackboardStatsDrop()),
-            Positioned(bottom: 10, left: 15, child: _buildRecordPlayer()),
-          ],
+              Positioned(top: 15, left: 20, child: _buildTomatoTimerDrop()),
+              Positioned(top: 20, left: 50, child: _buildExpBarDrop()),
+              Positioned(
+                top: 15,
+                right: 28,
+                child: _buildBlackboardStatsDrop(),
+              ),
+              Positioned(bottom: 10, left: 15, child: _buildRecordPlayer()),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _buildTomatoTimerDrop() {
@@ -331,7 +341,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                   }
                 });
               },
-                child: AnimatedScale(
+              child: AnimatedScale(
                 scale: _isTomatoScaling ? 0.9 : 1.0,
                 duration: const Duration(milliseconds: 150),
                 child: Container(
@@ -381,16 +391,25 @@ class _UIWidgetsState extends State<UIWidgets> {
                           valueListenable: widget.controller.pomodoroState,
                           builder: (context, state, _) {
                             // 点击展开时如果处于 ready（未开始），按产品期望显示为专注模式（红色）。
-                            final bool isStudying = state == PomodoroState.studying ||
-                                widget.controller.phaseStatus.value == PomodoroPhaseStatus.ready;
+                            final bool isStudying =
+                                state == PomodoroState.studying ||
+                                widget.controller.phaseStatus.value ==
+                                    PomodoroPhaseStatus.ready;
 
                             // 对于专注阶段，进度条按“已流逝比例”增长（从空到满）；
                             // 对于休息阶段，进度条按“剩余比例”减少（从满到空）。
                             // 统一使用剩余比例显示进度（无论专注或休息，都是从满到空）
-                            final double progressValue = _currentProgress.clamp(0.0, 1.0);
+                            final double progressValue = _currentProgress.clamp(
+                              0.0,
+                              1.0,
+                            );
 
-                            final Color progressColor = isStudying ? Colors.redAccent : Colors.green;
-                            final Color backgroundColor = isStudying ? Colors.red.shade100 : Colors.green.shade100;
+                            final Color progressColor = isStudying
+                                ? Colors.redAccent
+                                : Colors.green;
+                            final Color backgroundColor = isStudying
+                                ? Colors.red.shade100
+                                : Colors.green.shade100;
 
                             return SizedBox(
                               width: 70,
@@ -406,17 +425,22 @@ class _UIWidgetsState extends State<UIWidgets> {
                         ),
                         ValueListenableBuilder<int>(
                           valueListenable: widget.controller.remainingSeconds,
-                          builder: (BuildContext context, int seconds, Widget? child) {
-                            return Text(
-                              _formatTime(seconds),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF5D4037),
-                                fontFamily: 'ZCOOLKuaiLe-Regular',
-                              ),
-                            );
-                          },
+                          builder:
+                              (
+                                BuildContext context,
+                                int seconds,
+                                Widget? child,
+                              ) {
+                                return Text(
+                                  _formatTime(seconds),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF5D4037),
+                                    fontFamily: 'ZCOOLKuaiLe-Regular',
+                                  ),
+                                );
+                              },
                         ),
                       ],
                     ),
@@ -448,7 +472,9 @@ class _UIWidgetsState extends State<UIWidgets> {
                         IconButton(
                           icon: const Icon(Icons.edit),
                           color: const Color(0xFF5D4037),
-                          onPressed: _isTimerRunning ? null : _openPomodoroConfig,
+                          onPressed: _isTimerRunning
+                              ? null
+                              : _openPomodoroConfig,
                         ),
                       ],
                     ),
@@ -476,7 +502,11 @@ class _UIWidgetsState extends State<UIWidgets> {
                 border: Border.all(color: const Color(0xFF795548), width: 1),
                 borderRadius: BorderRadius.circular(8),
                 boxShadow: const [
-                  BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2)),
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
                 ],
               ),
               child: Material(
@@ -508,36 +538,52 @@ class _UIWidgetsState extends State<UIWidgets> {
                                     ),
                                     const SizedBox(height: 4),
                                     ValueListenableBuilder<int>(
-                                      valueListenable: widget.controller.focusDurationSeconds,
-                                      builder: (context, value, _) => _buildAdjustRow(
-                                        label: '专注(分)',
-                                        value: value ~/ 60,
-                                        onIncrease: () => _changeFocusMinutes(1),
-                                        onDecrease: () => _changeFocusMinutes(-1),
-                                        onSuperIncrease: () => _changeFocusMinutes(10),
-                                      ),
+                                      valueListenable: widget
+                                          .controller
+                                          .focusDurationSeconds,
+                                      builder: (context, value, _) =>
+                                          _buildAdjustRow(
+                                            label: '专注(分)',
+                                            value: value ~/ 60,
+                                            onIncrease: () =>
+                                                _changeFocusMinutes(1),
+                                            onDecrease: () =>
+                                                _changeFocusMinutes(-1),
+                                            onSuperIncrease: () =>
+                                                _changeFocusMinutes(10),
+                                          ),
                                     ),
                                     const SizedBox(height: 3),
                                     ValueListenableBuilder<int>(
-                                      valueListenable: widget.controller.restDurationSeconds,
-                                      builder: (context, value, _) => _buildAdjustRow(
-                                        label: '休息(分)',
-                                        value: value ~/ 60,
-                                        onIncrease: () => _changeRestMinutes(1),
-                                        onDecrease: () => _changeRestMinutes(-1),
-                                        onSuperIncrease: () => _changeRestMinutes(10),
-                                      ),
+                                      valueListenable:
+                                          widget.controller.restDurationSeconds,
+                                      builder: (context, value, _) =>
+                                          _buildAdjustRow(
+                                            label: '休息(分)',
+                                            value: value ~/ 60,
+                                            onIncrease: () =>
+                                                _changeRestMinutes(1),
+                                            onDecrease: () =>
+                                                _changeRestMinutes(-1),
+                                            onSuperIncrease: () =>
+                                                _changeRestMinutes(10),
+                                          ),
                                     ),
                                     const SizedBox(height: 3),
                                     ValueListenableBuilder<int?>(
-                                      valueListenable: widget.controller.cycleCount,
-                                      builder: (context, value, _) => _buildAdjustRow(
-                                        label: '循环(次)',
-                                        value: value ?? 0,
-                                        onIncrease: () => _changeCycleCount(1),
-                                        onDecrease: () => _changeCycleCount(-1),
-                                        onSuperIncrease: () => _changeCycleCount(10),
-                                      ),
+                                      valueListenable:
+                                          widget.controller.cycleCount,
+                                      builder: (context, value, _) =>
+                                          _buildAdjustRow(
+                                            label: '循环(次)',
+                                            value: value ?? 0,
+                                            onIncrease: () =>
+                                                _changeCycleCount(1),
+                                            onDecrease: () =>
+                                                _changeCycleCount(-1),
+                                            onSuperIncrease: () =>
+                                                _changeCycleCount(10),
+                                          ),
                                     ),
                                     const SizedBox(height: 1),
                                     Align(
@@ -555,7 +601,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                                       ),
                                     ),
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         TextButton(
                                           onPressed: _closePomodoroConfig,
@@ -663,7 +710,10 @@ class _UIWidgetsState extends State<UIWidgets> {
           child: SingleChildScrollView(
             physics: const NeverScrollableScrollPhysics(),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 30.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12.0,
+                vertical: 30.0,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -734,8 +784,8 @@ class _UIWidgetsState extends State<UIWidgets> {
             scale: _isStatsScaling ? 0.9 : 1.0,
             duration: const Duration(milliseconds: 150),
             child: Container(
-                width: 64,
-                height: 64,
+              width: 64,
+              height: 64,
               decoration: const BoxDecoration(
                 image: DecorationImage(
                   image: AssetImage('assets/images/board_btn.png'),
@@ -790,7 +840,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                                   fontSize: 19,
                                   fontFamily: 'ZhuoKai',
                                   shadows: const [
-                                    BoxShadow(color: Colors.white38, blurRadius: 3),
+                                    BoxShadow(
+                                      color: Colors.white38,
+                                      blurRadius: 3,
+                                    ),
                                   ],
                                 ),
                               );
@@ -807,7 +860,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                                   fontSize: 19,
                                   fontFamily: 'ZhuoKai',
                                   shadows: const [
-                                    BoxShadow(color: Colors.white38, blurRadius: 3),
+                                    BoxShadow(
+                                      color: Colors.white38,
+                                      blurRadius: 3,
+                                    ),
                                   ],
                                 ),
                               );
@@ -823,7 +879,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                         onTap: () {
                           _showAboutUsDialog(context, widget.controller);
                         },
-                            child: Column(
+                        child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
@@ -833,7 +889,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                                 fontSize: 12,
                                 fontFamily: 'ZhuoKai',
                                 shadows: const [
-                                  BoxShadow(color: Colors.white38, blurRadius: 2),
+                                  BoxShadow(
+                                    color: Colors.white38,
+                                    blurRadius: 2,
+                                  ),
                                 ],
                               ),
                             ),
@@ -843,7 +902,9 @@ class _UIWidgetsState extends State<UIWidgets> {
                               height: 44,
                               decoration: const BoxDecoration(
                                 image: DecorationImage(
-                                  image: AssetImage('assets/images/eraser_btn.png'),
+                                  image: AssetImage(
+                                    'assets/images/eraser_btn.png',
+                                  ),
                                   fit: BoxFit.fill,
                                 ),
                               ),
@@ -890,7 +951,11 @@ class _UIWidgetsState extends State<UIWidgets> {
                     ),
                     borderRadius: BorderRadius.circular(30),
                     boxShadow: const [
-                      BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 5)),
+                      BoxShadow(
+                        color: Colors.black54,
+                        blurRadius: 10,
+                        offset: Offset(0, 5),
+                      ),
                     ],
                   ),
                   child: Row(
@@ -917,7 +982,9 @@ class _UIWidgetsState extends State<UIWidgets> {
                       GestureDetector(
                         onTap: widget.controller.playOrPauseMusic,
                         child: Image.asset(
-                          isMusicPlaying ? 'assets/images/btn_pause.png' : 'assets/images/btn_play.png',
+                          isMusicPlaying
+                              ? 'assets/images/btn_pause.png'
+                              : 'assets/images/btn_play.png',
                           width: 45,
                           height: 45,
                           fit: BoxFit.contain,
@@ -969,7 +1036,13 @@ class _UIWidgetsState extends State<UIWidgets> {
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.85),
                         borderRadius: BorderRadius.circular(12),
-                        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 4))],
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black45,
+                            blurRadius: 8,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: ValueListenableBuilder<double>(
                         valueListenable: widget.controller.musicVolume,
@@ -977,7 +1050,11 @@ class _UIWidgetsState extends State<UIWidgets> {
                           return Column(
                             mainAxisSize: MainAxisSize.max,
                             children: [
-                              const Icon(Icons.volume_up, color: Colors.white, size: 18),
+                              const Icon(
+                                Icons.volume_up,
+                                color: Colors.white,
+                                size: 18,
+                              ),
                               const SizedBox(height: 6),
                               Expanded(
                                 child: RotatedBox(
@@ -985,7 +1062,9 @@ class _UIWidgetsState extends State<UIWidgets> {
                                   child: SliderTheme(
                                     data: SliderTheme.of(context).copyWith(
                                       trackHeight: 6,
-                                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                                      thumbShape: const RoundSliderThumbShape(
+                                        enabledThumbRadius: 8,
+                                      ),
                                     ),
                                     child: Slider(
                                       value: volume,
@@ -1004,14 +1083,22 @@ class _UIWidgetsState extends State<UIWidgets> {
                                         });
                                       },
                                       onChanged: (newValue) {
-                                        widget.controller.setMusicVolume(newValue);
+                                        widget.controller.setMusicVolume(
+                                          newValue,
+                                        );
                                       },
                                     ),
                                   ),
                                 ),
                               ),
                               IconButton(
-                                icon: Icon(volume > 0 ? Icons.volume_up : Icons.volume_off, color: Colors.white, size: 18),
+                                icon: Icon(
+                                  volume > 0
+                                      ? Icons.volume_up
+                                      : Icons.volume_off,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
                                 onPressed: () {
                                   if (volume > 0) {
                                     widget.controller.setMusicVolume(0.0);
@@ -1037,7 +1124,10 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 }
 
-void _showAboutUsDialog(BuildContext context, AppController controller, [String aboutText = '''鸡公煲队 (Rooster Stewdio)
+void _showAboutUsDialog(
+  BuildContext context,
+  AppController controller, [
+  String aboutText = '''鸡公煲队 (Rooster Stewdio)
 
 由 4 人团队历时 60 天精心慢炖而成。
 鸡公煲队正式入驻！
@@ -1052,45 +1142,133 @@ void _showAboutUsDialog(BuildContext context, AppController controller, [String 
 汤底架构师：姚博闻
 灵魂调味师：陈逸宇
 
-“加辣、加汤、不加 Bug！”''']) {
+“加辣、加汤、不加 Bug！”''',
+]) {
   showDialog(
     context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.55),
     builder: (ctx) => AlertDialog(
-      backgroundColor: const Color(0xFFF4E8C1),
-      contentPadding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+      backgroundColor: const Color(0xFFF7E9C6),
+      elevation: 18,
+      shadowColor: const Color(0x7F3D2A1A),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: Color(0xFFC89961), width: 1.2),
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
       content: SizedBox(
-        width: 280,
+        width: 288,
         child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 圆形 logo（硬裁切）：请把图片放在 assets/images/about_logo.png
-              CircleAvatar(
-                radius: 28,
-                backgroundImage: const AssetImage('assets/images/about_logo.png'),
-                backgroundColor: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFFFF7E4), Color(0xFFF1E0BC)],
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'ABOUT US',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                aboutText,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, height: 1.4),
-              ),
-              const SizedBox(height: 6),
-            ],
+              border: Border.all(color: const Color(0xFFDAB98D)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33A56D3F),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 圆形 logo（硬裁切）：请把图片放在 assets/images/about_logo.png
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFFFE7B0), Color(0xFFD39A59)],
+                    ),
+                  ),
+                  child: const CircleAvatar(
+                    radius: 28,
+                    backgroundImage: AssetImage('assets/images/about_logo.png'),
+                    backgroundColor: Colors.transparent,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'ABOUT US',
+                  style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: Color(0xFF4A2A13),
+                    fontFamily: 'ZCOOLKuaiLe-Regular',
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 122,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0x00B07D49),
+                        Color(0xFFB07D49),
+                        Color(0x00B07D49),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.44),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFD1AF84)),
+                  ),
+                  child: Text(
+                    aboutText,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: Color(0xFF4A2A13),
+                      fontFamily: 'ZhuoKai',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+            ),
           ),
         ),
       ),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       actions: [
         TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF4A2A13),
+            backgroundColor: const Color(0xFFE8CEA0),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: const BorderSide(color: Color(0xFFC5914E)),
+            ),
+          ),
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('CLOSE', style: TextStyle(color: Colors.brown)),
+          child: const Text(
+            'CLOSE',
+            style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.8),
+          ),
         ),
       ],
     ),
@@ -1102,7 +1280,12 @@ class ChatBubble extends StatefulWidget {
   final VoidCallback onNext;
   final VoidCallback onSkip;
 
-  const ChatBubble({super.key, required this.text, required this.onNext, required this.onSkip});
+  const ChatBubble({
+    super.key,
+    required this.text,
+    required this.onNext,
+    required this.onSkip,
+  });
 
   @override
   State<ChatBubble> createState() => _ChatBubbleState();
@@ -1206,7 +1389,11 @@ class _ChatBubbleState extends State<ChatBubble> {
           color: const Color(0xFFFFFDF8),
           borderRadius: BorderRadius.circular(20),
           boxShadow: const [
-            BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 5)),
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 10,
+              offset: Offset(0, 5),
+            ),
           ],
         ),
         child: Stack(

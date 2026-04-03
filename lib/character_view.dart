@@ -1,10 +1,14 @@
 // 角色显示模块 - 负责 Live2D 角色动画和交互
 
+import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+
+import 'app_controller.dart';
 
 const double kCharacterHorizontalOffset = 100.0;
 const double kCharacterVerticalOffset = 320.0;
@@ -15,15 +19,22 @@ const double kCharacterVerticalOffset = 320.0;
 /// - Live2D 模型加载和渲染
 /// - JavaScript 通道通信
 class CharacterView extends StatefulWidget {
-  /// 是否正在计时（用于扩展：active 时播放动作，idle 时播放待机）
-  final bool isActive;
-  
+  /// 当前番茄钟状态，用于切换基础待机动作
+  final PomodoroState pomodoroState;
+
+  /// 是否处于对话中
+  final bool isTalking;
+
+  /// 角色被点击时回调给 Flutter
+  final VoidCallback? onCharacterTap;
+
+  /// 出场动画开始播放时回调给 Flutter
+  final VoidCallback? onEntranceMotionStarted;
+
   /// 纹理文件路径列表（相对于 assets 目录）
-  /// 默认为 Hiyori 模型的纹理：texture_00.png, texture_01.png
   final List<String> texturePaths;
-  
+
   /// 模型基础路径（相对于 assets 目录）
-  /// 默认为 'live2d/hiyori/'
   final String modelBasePath;
 
   /// Flutter 层整体横向位移（像素）。负值向左，正值向右。
@@ -35,7 +46,10 @@ class CharacterView extends StatefulWidget {
 
   const CharacterView({
     super.key,
-    this.isActive = false,
+    required this.pomodoroState,
+    required this.isTalking,
+    this.onCharacterTap,
+    this.onEntranceMotionStarted,
     this.texturePaths = const [
       'live2d/hiyori_pro/hiyori_movie_pro_t03.4096/texture_00.png',
     ],
@@ -51,8 +65,14 @@ class CharacterView extends StatefulWidget {
 class _CharacterViewState extends State<CharacterView> {
   late final WebViewController _controller;
   bool _pageReady = false;
-  String? _lastMotionState;
+  bool _isBridgeReady = false;
+  String? _lastCharacterState;
   String? _lastViewportOffsetState;
+  bool? _lastTalkingState;
+
+  String get _targetCharacterState {
+    return widget.pomodoroState == PomodoroState.studying ? 'study' : 'normal';
+  }
 
   @override
   void initState() {
@@ -63,15 +83,16 @@ class _CharacterViewState extends State<CharacterView> {
   @override
   void reassemble() {
     super.reassemble();
-    // Hot reload does not necessarily trigger didUpdateWidget; force-sync offsets.
     _syncViewportOffset(force: true);
+    _syncCharacterState(force: true);
   }
 
   @override
   void didUpdateWidget(covariant CharacterView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.isActive != widget.isActive) {
-      _syncMotionState();
+    if (oldWidget.pomodoroState != widget.pomodoroState ||
+        oldWidget.isTalking != widget.isTalking) {
+      _syncCharacterState();
     }
     if (oldWidget.horizontalOffset != widget.horizontalOffset ||
         oldWidget.verticalOffset != widget.verticalOffset) {
@@ -79,31 +100,49 @@ class _CharacterViewState extends State<CharacterView> {
     }
   }
 
-  Future<void> _syncMotionState({bool force = false}) async {
-    if (!_pageReady) return;
+  Future<void> _syncCharacterState({bool force = false}) async {
+    if (!_pageReady) {
+      return;
+    }
 
-    final nextState = widget.isActive ? 'study' : 'normal';
-    if (!force && _lastMotionState == nextState) return;
+    final String nextState = _targetCharacterState;
+    final bool talkingChanged = _lastTalkingState != widget.isTalking;
+    if (!force && _lastCharacterState == nextState && !talkingChanged) {
+      return;
+    }
 
     try {
-      final stateJson = jsonEncode(nextState);
       await _controller.runJavaScript(
-        'if (window.setCharacterState) { window.setCharacterState($stateJson); }',
+        'if (window.setCharacterState) { window.setCharacterState(${jsonEncode(nextState)}); }',
       );
-      _lastMotionState = nextState;
-      debugPrint('[CharacterView] synced motion state -> $nextState');
+
+      if (_isBridgeReady && widget.isTalking && (force || talkingChanged)) {
+        await _controller.runJavaScript(
+          'if (window.playMotionByName) { window.playMotionByName("Talk", 0); } else if (window.playMotion) { window.playMotion("Talk"); }',
+        );
+      }
+
+      _lastCharacterState = nextState;
+      _lastTalkingState = widget.isTalking;
+      debugPrint(
+        '[CharacterView] synced state -> $nextState, talking=${widget.isTalking}',
+      );
     } catch (e) {
-      debugPrint('[CharacterView] failed to sync motion state: $e');
+      debugPrint('[CharacterView] failed to sync character state: $e');
     }
   }
 
   Future<void> _syncViewportOffset({bool force = false}) async {
-    if (!_pageReady) return;
+    if (!_pageReady) {
+      return;
+    }
 
-    final x = widget.horizontalOffset ?? kCharacterHorizontalOffset;
-    final y = widget.verticalOffset ?? kCharacterVerticalOffset;
-    final nextState = '$x|$y';
-    if (!force && _lastViewportOffsetState == nextState) return;
+    final double x = widget.horizontalOffset ?? kCharacterHorizontalOffset;
+    final double y = widget.verticalOffset ?? kCharacterVerticalOffset;
+    final String nextState = '$x|$y';
+    if (!force && _lastViewportOffsetState == nextState) {
+      return;
+    }
 
     try {
       await _controller.runJavaScript(
@@ -117,15 +156,12 @@ class _CharacterViewState extends State<CharacterView> {
   }
 
   Future<void> _initializeWebView() async {
-    // 创建 WebViewController
     final controller = WebViewController();
 
-    // 配置 Android WebView 以允许本地文件访问
     if (controller.platform is AndroidWebViewController) {
       final androidController = controller.platform as AndroidWebViewController;
       androidController.setMediaPlaybackRequiresUserGesture(false);
-      // 设置 WebView 透明背景
-      androidController.setBackgroundColor(const Color(0x00000000)); // ARGB: 00=透明, 000000=黑色
+      androidController.setBackgroundColor(const Color(0x00000000));
     }
 
     _controller = controller
@@ -134,16 +170,16 @@ class _CharacterViewState extends State<CharacterView> {
       ..addJavaScriptChannel(
         'AssetLoader',
         onMessageReceived: (JavaScriptMessage message) async {
-          // 解析请求: "assets/live2d/hiyori/Hiyori.model3.json"
-          final parts = message.message.split('|');
-          if (parts.isEmpty) return;
+          final List<String> parts = message.message.split('|');
+          if (parts.isEmpty) {
+            return;
+          }
 
-          final assetPath = parts[0];
-          final callbackId = parts.length > 1 ? parts[1] : '';
+          final String assetPath = parts[0];
+          final String callbackId = parts.length > 1 ? parts[1] : '';
 
           try {
-            final content = await rootBundle.loadString(assetPath);
-            // 调用 JavaScript 回调
+            final String content = await rootBundle.loadString(assetPath);
             await _controller.runJavaScript(
               'window._assetLoaded("$callbackId", ${jsonEncode(content)});',
             );
@@ -157,17 +193,18 @@ class _CharacterViewState extends State<CharacterView> {
       ..addJavaScriptChannel(
         'BinaryAssetLoader',
         onMessageReceived: (JavaScriptMessage message) async {
-          final parts = message.message.split('|');
-          if (parts.isEmpty) return;
+          final List<String> parts = message.message.split('|');
+          if (parts.isEmpty) {
+            return;
+          }
 
-          final assetPath = parts[0];
-          final callbackId = parts.length > 1 ? parts[1] : '';
+          final String assetPath = parts[0];
+          final String callbackId = parts.length > 1 ? parts[1] : '';
 
           try {
-            final data = await rootBundle.load(assetPath);
-            final base64 = base64Encode(data.buffer.asUint8List());
+            final ByteData data = await rootBundle.load(assetPath);
+            final String base64 = base64Encode(data.buffer.asUint8List());
 
-            // 根据文件类型设置 MIME type
             String mimeType = 'application/octet-stream';
             if (assetPath.endsWith('.png')) {
               mimeType = 'image/png';
@@ -189,42 +226,41 @@ class _CharacterViewState extends State<CharacterView> {
       ..addJavaScriptChannel(
         'Live2DController',
         onMessageReceived: (JavaScriptMessage message) {
-          if (!mounted) return;
-          debugPrint('[Live2DController] ${message.message}');
+          if (!mounted) {
+            return;
+          }
+          _handleLive2DMessage(message.message);
         },
       )
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageFinished: (String url) {
+          onPageFinished: (String _) {
             _pageReady = true;
-            _syncMotionState(force: true);
-            _syncViewportOffset(force: true);
+            unawaited(_syncCharacterState(force: true));
+            unawaited(_syncViewportOffset(force: true));
           },
         ),
       );
 
-    // 读取所有文件内容
-    final htmlContent = await rootBundle.loadString(
+    final String htmlContent = await rootBundle.loadString(
       'assets/live2d/hiyori_viewer.html',
     );
 
-    // 预加载纹理并生成 base64，直接嵌入 HTML 占位符，确保脚本执行前即可使用
-    Map<String, String> preloadedTextures = {};
-    for (int i = 0; i < widget.texturePaths.length; i++) {
-      final texturePath = widget.texturePaths[i];
-      final candidates = <String>{
+    final Map<String, String> preloadedTextures = <String, String>{};
+    for (final String texturePath in widget.texturePaths) {
+      final Set<String> candidates = <String>{
         'assets/$texturePath',
         texturePath,
       };
 
       ByteData? data;
-      for (final candidate in candidates) {
+      for (final String candidate in candidates) {
         try {
           data = await rootBundle.load(candidate);
           debugPrint('[CharacterView] Preloaded texture from: $candidate');
           break;
         } catch (_) {
-          // Try next candidate path.
+          // 继续尝试下一个候选路径
         }
       }
 
@@ -233,29 +269,26 @@ class _CharacterViewState extends State<CharacterView> {
         continue;
       }
 
-      final base64 = base64Encode(data.buffer.asUint8List());
-
-      // 从路径获取纹理键名（例如 texture_00）
-      final fileName = texturePath.split('/').last.replaceAll('.png', '');
+      final String base64 = base64Encode(data.buffer.asUint8List());
+      final String fileName = texturePath
+          .split('/')
+          .last
+          .replaceAll('.png', '');
       preloadedTextures[fileName] = 'data:image/png;base64,$base64';
     }
 
-    // 将JS内容内联到HTML中,替换script标签
-    // 内联 pixi / cubism core / live2d-display 以避免外链加载问题
-    final pixiJs = await rootBundle.loadString(
+    final String pixiJs = await rootBundle.loadString(
       'assets/live2d/libs/pixi.min.js',
     );
-    final cubismCoreJs = await rootBundle.loadString(
+    final String cubismCoreJs = await rootBundle.loadString(
       'assets/live2d/libs/live2dcubismcore.min.js',
     );
-    final live2dDisplayJs = await rootBundle.loadString(
+    final String live2dDisplayJs = await rootBundle.loadString(
       'assets/live2d/libs/pixi-live2d-display.min.js',
     );
+    final String texturesJson = jsonEncode(preloadedTextures);
 
-    // 用 JSON 编码纹理对象，然后注入到 JavaScript 中
-    final texturesJson = jsonEncode(preloadedTextures);
-
-    final modifiedHtml = htmlContent
+    final String modifiedHtml = htmlContent
         .replaceAll(
           '<script src="https://appassets.androidplatform.net/assets/live2d/libs/pixi.min.js"></script>',
           '<script>$pixiJs</script>',
@@ -275,18 +308,46 @@ class _CharacterViewState extends State<CharacterView> {
 
     await _controller.loadHtmlString(
       modifiedHtml,
-      baseUrl: 'https://appassets.androidplatform.net/assets/${widget.modelBasePath}',
+      baseUrl:
+          'https://appassets.androidplatform.net/assets/${widget.modelBasePath}',
     );
   }
 
-  @override
-  void dispose() {
-    super.dispose();
+  void _handleLive2DMessage(String rawMessage) {
+    try {
+      final dynamic decoded = jsonDecode(rawMessage);
+      if (decoded is! Map<String, dynamic>) {
+        return;
+      }
+
+      final String? type = decoded['type'] as String?;
+      if (type == null) {
+        return;
+      }
+
+      switch (type) {
+        case 'ready':
+          _isBridgeReady = true;
+          unawaited(_syncCharacterState(force: true));
+          unawaited(_syncViewportOffset(force: true));
+          return;
+        case 'character_tap':
+          widget.onCharacterTap?.call();
+          return;
+        case 'entrance_motion_started':
+          widget.onEntranceMotionStarted?.call();
+          return;
+        default:
+          return;
+      }
+    } on FormatException {
+      debugPrint('[Live2DController] $rawMessage');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return ColoredBox(
       color: Colors.transparent,
       child: WebViewWidget(controller: _controller),
     );

@@ -46,6 +46,7 @@ class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
     unawaited(controller.handleLifecycleStateChanged(state));
 
     if (state != AppLifecycleState.resumed) {
+      controller.handleAppBackgrounded();
       return;
     }
 

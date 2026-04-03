@@ -425,7 +425,7 @@
         const SAFE_TOP_PADDING_PX = 16;
         const MAX_TOP_CLAMP_PX = 48;
         const MODEL_SCALE = 0.24;
-        const TAP_ZONE_WIDTH_RATIO = 0.35;
+        const TAP_ZONE_WIDTH_RATIO = 0.65;
         const TAP_ZONE_HEIGHT_RATIO = 0.86;
         let _externalOffsetX = 0;
         let _externalOffsetY = 0;
@@ -575,11 +575,18 @@
             return applied > 0;
         }
 
+        function postBridgeMessage(type, payload = {}) {
+            if (!window.Live2DController) {
+                return;
+            }
+            Live2DController.postMessage(JSON.stringify({
+                type,
+                ...payload,
+            }));
+        }
+
         function updateStatus(message) {
             console.log('[Live2D]', message);
-            if (window.Live2DController) {
-                Live2DController.postMessage(message);
-            }
         }
 
         function triggerSmileMotion() {
@@ -735,7 +742,7 @@
                     preserveDrawingBuffer: false,
                     powerPreference: 'high-performance'
                 });
-                
+
                 // 确保 canvas 元素完全透明
                 const canvas = document.getElementById('canvas');
                 if (canvas) {
@@ -954,6 +961,7 @@
                     updateStatus('[Init] Start first-frame parameters pre-applied');
                 }
 
+                postBridgeMessage('entrance_motion_started');
                 const startPlayed = await playMotionByName('Start', 0);
                 if (!startPlayed) {
                     updateStatus('[Init] Start motion unavailable, fallback to state motion');
@@ -967,12 +975,16 @@
                 flushQueuedCharacterState();
 
                 updateStatus('✅ Live2D ready! Model is visible on screen.');
+                postBridgeMessage('ready');
 
                 // Tap interaction - only on the Live2D model itself
                 model.on('pointertap', (event) => {
                     if (!isPointerWithinTapZone(event)) {
                         return;
                     }
+
+                    updateStatus('Model clicked!');
+                    postBridgeMessage('character_tap');
                     triggerSmileMotion();
                 });
 

@@ -54,6 +54,8 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 
   void _openPomodoroConfig() {
+    widget.controller.registerUserInteraction();
+
     if (_isTimerRunning) {
       return;
     }
@@ -75,6 +77,7 @@ class _UIWidgetsState extends State<UIWidgets> {
       return;
     }
 
+    widget.controller.registerUserInteraction();
     setState(() {
       _isPomodoroConfigOpen = false;
     });
@@ -178,11 +181,56 @@ class _UIWidgetsState extends State<UIWidgets> {
     }
   }
 
+  void _handleBlankTap() {
+    _closeAllPanels();
+
+    if (widget.controller.isTalking) {
+      widget.controller.nextDialogue();
+      return;
+    }
+
+    widget.controller.registerUserInteraction();
+  }
+
+  void _handleCharacterTap() {
+    widget.controller.registerUserInteraction();
+    unawaited(widget.controller.triggerDialogue('clicked'));
+  }
+
+  void _handleEntranceMotionStarted() {
+    widget.controller.scheduleColdStartDialogueAfterEntrance();
+  }
+
   Widget _buildCharacterStage(BuildContext context) {
-    return ValueListenableBuilder<PomodoroState>(
-      valueListenable: widget.controller.pomodoroState,
-      builder: (context, state, _) {
-        return CharacterView(isActive: state == PomodoroState.studying);
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        widget.controller,
+        widget.controller.pomodoroState,
+      ]),
+      builder: (context, _) {
+        return CharacterView(
+          pomodoroState: widget.controller.pomodoroState.value,
+          isTalking: widget.controller.isTalking,
+          onCharacterTap: _handleCharacterTap,
+          onEntranceMotionStarted: _handleEntranceMotionStarted,
+        );
+      },
+    );
+  }
+
+  Widget _buildDialogueBubble() {
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        if (!widget.controller.isTalking) {
+          return const SizedBox.shrink();
+        }
+
+        return ChatBubble(
+          text: widget.controller.currentDialogue,
+          onNext: widget.controller.nextDialogue,
+          onSkip: widget.controller.skipDialogue,
+        );
       },
     );
   }
@@ -204,27 +252,14 @@ class _UIWidgetsState extends State<UIWidgets> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: _closeAllPanels,
+        onTap: _handleBlankTap,
+        behavior: HitTestBehavior.deferToChild,
         child: Stack(
           children: [
             Positioned.fill(child: _buildStageBackground()),
             Positioned.fill(child: _buildCharacterStage(context)),
             Positioned.fill(child: _buildStageForeground()),
-            Positioned(
-              bottom: 120,
-              right: 40,
-              child: ValueListenableBuilder<int>(
-                valueListenable: widget.controller.level,
-                builder: (context, level, _) {
-                  return ChatBubble(
-                    text: widget.controller.dialogueLockReason(level + 1),
-                    onNext: () {},
-                    onSkip: () {},
-                  );
-                },
-              ),
-            ),
+            Positioned(bottom: 120, right: 40, child: _buildDialogueBubble()),
             Positioned(top: 10, left: 20, child: _buildTomatoTimerDrop()),
             Positioned(top: 20, left: 50, child: _buildExpBarDrop()),
             Positioned(top: 15, right: 28, child: _buildBlackboardStatsDrop()),
@@ -247,6 +282,7 @@ class _UIWidgetsState extends State<UIWidgets> {
             GestureDetector(
               onTap: () {
                 final bool nextTomatoExpanded = !_isTomatoExpanded;
+                widget.controller.registerUserInteraction();
                 _triggerScaleAnimation('tomato');
                 setState(() {
                   _isTomatoExpanded = nextTomatoExpanded;
@@ -567,6 +603,7 @@ class _UIWidgetsState extends State<UIWidgets> {
         GestureDetector(
           onTap: () {
             final bool nextExpExpanded = !_isExpExpanded;
+            widget.controller.registerUserInteraction();
             _triggerScaleAnimation('exp');
             setState(() {
               _isExpExpanded = nextExpExpanded;
@@ -680,6 +717,7 @@ class _UIWidgetsState extends State<UIWidgets> {
         GestureDetector(
           onTap: () {
             final bool nextStatsExpanded = !_isStatsExpanded;
+            widget.controller.registerUserInteraction();
             _triggerScaleAnimation('stats');
             setState(() {
               _isStatsExpanded = nextStatsExpanded;
@@ -793,6 +831,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                       right: 35,
                       child: GestureDetector(
                         onTap: () {
+                          widget.controller.registerUserInteraction();
                           _showShareCard(context, widget.controller);
                         },
                         child: Column(
@@ -872,7 +911,10 @@ class _UIWidgetsState extends State<UIWidgets> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: widget.controller.playPreviousTrack,
+                onTap: () {
+                  widget.controller.registerUserInteraction();
+                  unawaited(widget.controller.playPreviousTrack());
+                },
                 child: Image.asset(
                   'assets/images/btn_prev.png',
                   width: 30,
@@ -882,7 +924,10 @@ class _UIWidgetsState extends State<UIWidgets> {
               ),
               const SizedBox(width: 12),
               GestureDetector(
-                onTap: widget.controller.playOrPauseMusic,
+                onTap: () {
+                  widget.controller.registerUserInteraction();
+                  unawaited(widget.controller.playOrPauseMusic());
+                },
                 child: Image.asset(
                   isMusicPlaying
                       ? 'assets/images/btn_pause.png'
@@ -894,7 +939,10 @@ class _UIWidgetsState extends State<UIWidgets> {
               ),
               const SizedBox(width: 12),
               GestureDetector(
-                onTap: widget.controller.playNextTrack,
+                onTap: () {
+                  widget.controller.registerUserInteraction();
+                  unawaited(widget.controller.playNextTrack());
+                },
                 child: Image.asset(
                   'assets/images/btn_next.png',
                   width: 30,
@@ -904,7 +952,10 @@ class _UIWidgetsState extends State<UIWidgets> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: widget.controller.toggleMuteMusic,
+                onTap: () {
+                  widget.controller.registerUserInteraction();
+                  unawaited(widget.controller.toggleMuteMusic());
+                },
                 child: Image.asset(
                   'assets/images/btn_music.png',
                   width: 30,
@@ -947,6 +998,7 @@ void _showShareCard(BuildContext context, AppController controller) {
       actions: [
         TextButton(
           onPressed: () {
+            controller.registerUserInteraction();
             unawaited(controller.triggerUiBackSfx());
             Navigator.of(ctx).pop();
           },
@@ -976,7 +1028,28 @@ class ChatBubble extends StatefulWidget {
 class _ChatBubbleState extends State<ChatBubble> {
   String _displayedText = '';
   Timer? _timer;
+  Timer? _autoNextTimer;
   int _charIndex = 0;
+
+  void _handleBubbleTap() {
+    if (_charIndex < widget.text.length) {
+      _timer?.cancel();
+      setState(() {
+        _charIndex = widget.text.length;
+        _displayedText = widget.text;
+      });
+      _scheduleAutoNextIfNeeded();
+      return;
+    }
+
+    _cancelAutoNextTimer();
+    widget.onNext();
+  }
+
+  void _handleSkipTap() {
+    _cancelAutoNextTimer();
+    widget.onSkip();
+  }
 
   @override
   void initState() {
@@ -995,24 +1068,55 @@ class _ChatBubbleState extends State<ChatBubble> {
   @override
   void dispose() {
     _timer?.cancel();
+    _cancelAutoNextTimer();
     super.dispose();
   }
 
   void _startTypewriterEffect() {
     _timer?.cancel();
+    _cancelAutoNextTimer();
     setState(() {
       _displayedText = '';
       _charIndex = 0;
     });
     _timer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
-      if (_charIndex < widget.text.length) {
-        setState(() {
-          _charIndex++;
-          _displayedText = widget.text.substring(0, _charIndex);
-        });
-      } else {
+      if (_charIndex >= widget.text.length) {
         timer.cancel();
+        return;
       }
+
+      setState(() {
+        _charIndex++;
+        _displayedText = widget.text.substring(0, _charIndex);
+      });
+
+      if (_charIndex >= widget.text.length) {
+        timer.cancel();
+        _scheduleAutoNextIfNeeded();
+      }
+    });
+  }
+
+  void _cancelAutoNextTimer() {
+    _autoNextTimer?.cancel();
+    _autoNextTimer = null;
+  }
+
+  void _scheduleAutoNextIfNeeded() {
+    _cancelAutoNextTimer();
+
+    if (_charIndex < widget.text.length) {
+      return;
+    }
+
+    _autoNextTimer = Timer(const Duration(seconds: 8), () {
+      if (!mounted) {
+        return;
+      }
+      if (_charIndex < widget.text.length || _displayedText != widget.text) {
+        return;
+      }
+      widget.onNext();
     });
   }
 
@@ -1029,51 +1133,55 @@ class _ChatBubbleState extends State<ChatBubble> {
           child: Opacity(opacity: scale.clamp(0.0, 1.0), child: child),
         );
       },
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 240, minHeight: 60),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFFDF8),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 10,
-              offset: Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _displayedText,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    height: 1.4,
-                    color: Color(0xFF5D4037),
-                    fontFamily: 'ZCOOLKuaiLe-Regular',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _handleBubbleTap,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 240, minHeight: 60),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFDF8),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 10,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _displayedText,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.4,
+                      color: Color(0xFF5D4037),
+                      fontFamily: 'ZCOOLKuaiLe-Regular',
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                ],
+              ),
+              Positioned(
+                bottom: -5,
+                right: -5,
+                child: GestureDetector(
+                  onTap: _handleSkipTap,
+                  child: const Icon(
+                    Icons.fast_forward_rounded,
+                    size: 20,
+                    color: Colors.grey,
                   ),
                 ),
-                const SizedBox(height: 15),
-              ],
-            ),
-            Positioned(
-              bottom: -5,
-              right: -5,
-              child: GestureDetector(
-                onTap: widget.onSkip,
-                child: const Icon(
-                  Icons.fast_forward_rounded,
-                  size: 20,
-                  color: Colors.grey,
-                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

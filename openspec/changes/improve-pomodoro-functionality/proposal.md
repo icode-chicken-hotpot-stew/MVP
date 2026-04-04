@@ -1,93 +1,91 @@
 ## Summary
 
-本变更用于在当前正式快速开发阶段，把仍处于“前端占位 + controller 未完成”状态的番茄钟能力补齐为可联调、可恢复的真实功能实现。项目当前开发窗口为 1 周，目标是在当前前端与基础后端能力基础上，优先完成开始时间持久化、剩余时间计算与对前端输出、`resting` / `studying` 状态流转、专注/休息时长修改，以及有限轮次循环支持，并把 OpenSpec 收敛为番茄钟后续开发的唯一权威契约来源。
+本变更用于把番茄钟能力收敛为 `AppController` 驱动的单一事实源，并为后续联调、验证与归档提供权威契约。根据当前仓库现状，番茄钟核心状态机、快照持久化、启动恢复、配置更新与真实进度推导已经大部分落地；本 change 现阶段的重点已从“补齐核心实现”转为“对齐文档 / OpenSpec 与当前代码，并补完归档所需验证证据”。
 
 ## Why
 
 ### Background
 
-番茄钟是 APP 的核心功能，倒计时是否由用户启动直接决定关键的 `studying` / `resting` 业务状态流转。当前仓库已具备主界面、基础 controller 接口和一组番茄钟相关文档，但最新判断应以 `lib/` 下实际代码为准；现阶段项目已进入正式快速开发阶段，当前仍存在部分占位实现与未完成逻辑。
+番茄钟是 APP 的核心闭环之一，直接影响 `studying` / `resting` 的业务状态流转、UI 控制态、恢复逻辑与陪伴行为。当前仓库应优先以 `lib/` 下已合入代码为准，而不是继续沿用立项初期的旧文档判断现状。
 
-根据当前 `lib/` 中的真实实现，番茄钟展示仍分裂为两套来源：时间文本、按钮态部分来自 `AppController`，顶部进度条和部分重置行为仍依赖 `UIWidgets` 内部的 `_fakeTimer` / `_fakeProgress` 演示逻辑。同时，`toggleTimer()`、`resetTimer()` 仍未完成，统计面板与分享卡片也仍是 UI 占位，因此真实业务流转、持久化恢复与前后端联调都缺乏稳定实现。
+截至当前仓库状态：
+- `lib/app_controller.dart` 已提供 `pomodoroState`、`phaseStatus`、阶段快照持久化、`initialize()`、`startTimer()`、`pauseTimer()`、`resetTimer()`、配置更新方法与恢复逻辑。
+- `lib/main.dart` 已在 `MainStage` 初始化阶段触发 `controller.initialize()`，并用 `FutureBuilder` 保护首帧恢复。
+- `lib/ui_widgets.dart` 已使用 `remainingSeconds` 与 `currentPhaseDurationSeconds` 推导真实进度，并接入专注/休息/循环三个配置输入。
 
-### Problem Statement
+### Remaining Problem
 
-当前实现还没有形成番茄钟单一事实源，导致以下问题：
+虽然核心实现已基本落地，但当前仍有两类问题阻塞归档：
 
-- `studying` / `resting` 的真实流转尚未由稳定状态机托管。
-- 倒计时文本与顶部进度条不来自同一套真实状态，UI 仍存在本地假进度。
-- 开始、暂停、恢复、重置的业务语义没有被完整实现。
-- App 切后台、恢复、重启后，当前阶段与剩余时间无法可靠恢复。
-- 专注时长、休息时长和循环次数还缺少完整、稳定的配置能力。
-- 前端尚未把“开始 / 暂停 / 重置”三个控制动作与“三个配置输入框”冻结为明确 contract。
-- 旧的番茄钟文档体系已停止维护，而当前番茄钟规范必须收敛到可直接执行的单一权威契约中。
+- OpenSpec 与项目文档中仍保留大量“实现前现状”的旧描述，例如：`toggleTimer()` / `resetTimer()` 仍是占位、UI 仍依赖 `_fakeProgress`、主入口尚未接初始化。
+- 规范与实现尚未完全闭环：`tasks.md` 第 6 节验证项仍未完成，且当前 UI 仍保留 `toggleTimer()` + `isActive` 驱动的单播放/暂停按钮，尚未完全对齐为 OpenSpec 目标中的显式“开始 / 暂停 / 重置”控制语义。
 
-这使得当前番茄钟逻辑无法作为前后端联调、测试验证和后续功能扩展的稳定契约继续推进。
+## Current Implementation Status
+
+### Already Landed
+
+- controller 已成为番茄钟主要状态源，包含业务阶段、运行阶段、时长配置、循环配置与 session 计数。
+- 使用 `shared_preferences` 风格本地 key-value 存储持久化 pomodoro snapshot 与配置。
+- 启动恢复、后台恢复、过期阶段推进与 ready-state snapshot 已实现。
+- 顶部进度与倒计时文本已消费同一套 controller 状态。
+- 专注时长、休息时长、循环次数三个配置入口已接线到 controller 更新方法。
+
+### Remaining Gaps Before Archive
+
+- 还缺少 OpenSpec `tasks.md` 第 6 节要求的测试与人工验证证据。
+- UI 控制区尚未完全收敛到 `startTimer()` / `pauseTimer()` / `resetTimer()` 三个显式控制入口；当前仍存在 `toggleTimer()` 兼容入口和 `isActive` 驱动的按钮态。
+- 旧文档仍会误导后续开发者对当前实现状态的判断，需要同步校准。
 
 ## What Changes
 
-### New Resources Added
+### Capabilities Covered by This Change
 
-- `openspec/changes/improve-pomodoro-functionality/proposal.md`
-- `openspec/changes/improve-pomodoro-functionality/design.md`
-- `openspec/changes/improve-pomodoro-functionality/specs/pomodoro-persistence-and-remaining-time/spec.md`
-- `openspec/changes/improve-pomodoro-functionality/specs/pomodoro-state-transitions/spec.md`
-- `openspec/changes/improve-pomodoro-functionality/specs/pomodoro-duration-and-cycle-settings/spec.md`
-- `openspec/changes/improve-pomodoro-functionality/tasks.md`
-
-### New Capabilities
-
-- `pomodoro-persistence-and-remaining-time`：使用 `shared_preferences` 风格的轻量本地持久化方案保存番茄钟开始时间与运行快照，并由 controller 统一计算剩余时间后通过接口提供给前端。
-- `pomodoro-state-transitions`：定义番茄钟状态变化如何驱动 `resting` / `studying` 业务状态流转，以及开始、暂停、恢复、重置和阶段自然结束后的行为。
-- `pomodoro-duration-and-cycle-settings`：定义专注时间、休息时间和有限循环次数的配置能力，默认专注 `25min`、休息 `5min`，默认不循环，不支持无限循环。
+- `pomodoro-persistence-and-remaining-time`：保存番茄钟运行快照，并在恢复时由 controller 统一计算剩余时间。
+- `pomodoro-state-transitions`：定义 `resting` / `studying` 与 `ready` / `running` / `paused` 的组合语义，以及开始、暂停、恢复、重置与自然阶段推进规则。
+- `pomodoro-duration-and-cycle-settings`：定义专注时长、休息时长和有限循环次数的配置能力，默认专注 `1500` 秒、休息 `300` 秒、默认不循环。
 
 ### Authority Boundary
 
-- `openspec/changes/improve-pomodoro-functionality/` 与已合入的 `lib/` 实现共同构成番茄钟唯一真实来源。
-- OpenSpec 负责定义目标契约；当前代码负责反映已合入实现状态。
-- `fetchHistoryData()` 与设置入口 UI 不属于本次 change 的正式契约范围，不阻塞番茄钟单一事实源改造成立。
+- `openspec/changes/improve-pomodoro-functionality/` 负责定义目标 contract。
+- 当前仓库 `lib/` 下的已合入实现负责反映实际落地状态。
+- 归档判断必须同时满足“规范完成”与“实现/验证完成”，不能只看任一方。
 
 ## Success Criteria
 
-- 番茄钟开始时间能够被持久化保存，并可在恢复时用于重新计算当前阶段剩余时间。
-- controller 能通过稳定接口向前端提供剩余时间，作为倒计时文本与进度展示的共同来源。
-- 番茄钟状态变化能够正确驱动 `resting` / `studying` 的业务状态流转。
-- 前端提供开始、暂停、重置三个按钮，并由 controller 契约驱动其可用状态与行为。
-- 前端提供专注时长、休息时长、循环次数三个输入框，并通过 controller 配置接口完成更新。
-- 专注时间与休息时间支持修改，默认值分别为 `1500` 秒和 `300` 秒。
-- 专注循环支持有限正整数轮次，默认不循环，不支持无限循环。
-- UI 不再依赖 `_fakeProgress` 作为正式番茄钟进度来源。
-- 后续番茄钟开发直接以 OpenSpec 与当前已合入代码为依据，无需再依赖已废弃的旧文档体系来补齐核心行为定义。
+- 番茄钟运行快照与配置可被稳定恢复。
+- controller 为倒计时文本与进度展示提供同一套真实状态来源。
+- `pomodoroState` 与 `phaseStatus` 的职责边界保持清晰。
+- 三个配置输入与 controller 配置方法保持一致。
+- 文档、OpenSpec 与当前实现状态保持一致。
+- 归档前补齐测试、人工验证，以及剩余的 UI 控制语义差距。
 
 ## Scope
 
 - **In Scope**
-  - `AppController` 中的真实番茄钟状态机与公开方法实现
-  - 基于 `shared_preferences` 风格本地持久化的开始时间、运行快照和配置恢复
-  - 专注时长、休息时长、循环次数的配置能力
-  - `UIWidgets` 对番茄钟真实状态的消费替换
-  - 与主入口相关的必要初始化/恢复接线
-  - 把番茄钟 OpenSpec 收敛为唯一权威契约来源
+  - 番茄钟状态机、恢复、配置与 UI 消费 contract
+  - OpenSpec 与项目文档的现状校准
+  - 归档 readiness 判断
 
 - **Out of Scope**
-  - 对话系统完整实现
+  - 对话系统新增能力
   - Live2D 正式接入
-  - 完整历史明细、图表系统或复杂数据库设计
-  - `fetchHistoryData()` 的正式数据契约与真实统计实现
-  - 设置面板的最终 UI 位置与交互设计
+  - 历史统计正式建模
   - 云端同步、网络接口与整体 UI 重做
 
-## Timeline
+## Archive Readiness
 
-- 当前阶段：完成 proposal，冻结问题定义、采用方案与能力边界
-- 下一阶段：补 design，明确状态机、持久化模型、UI 接线和恢复策略
-- 再下一阶段：编写 specs 与 tasks，进入实现与联调
-- 本次收口阶段：清理剩余未决策点，使 OpenSpec 可直接替代旧 pomodoro docs 成为权威来源
+**当前不能归档。**
+
+阻塞项：
+1. `openspec/changes/improve-pomodoro-functionality/tasks.md` 第 6 节验证任务未完成；
+2. UI 控制语义尚未完全对齐为显式“开始 / 暂停 / 重置”三按钮；
+3. 若现在归档，会把“核心实现已大部分落地”与“验证/规范闭环未完成”混为一谈。
 
 ## References
 
 - `lib/app_controller.dart`
 - `lib/ui_widgets.dart`
 - `lib/main.dart`
-- `docs/dev-guide.md`
-- `docs/interface_spec.md`
+- `openspec/changes/improve-pomodoro-functionality/design.md`
+- `openspec/changes/improve-pomodoro-functionality/specs/`
+- `openspec/changes/improve-pomodoro-functionality/tasks.md`

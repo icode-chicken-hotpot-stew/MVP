@@ -9,6 +9,7 @@ abstract class AudioService {
   Future<void> initialize({required int trackIndex, required double volume});
 
   Future<bool> playBgm(int trackIndex, {required double volume});
+  Future<void> setBgmVolume(double volume);
   Future<void> pauseBgm();
   Future<bool> resumeBgm({required double volume});
   Future<void> stopBgm();
@@ -56,8 +57,27 @@ class JustAudioService implements AudioService {
       return;
     }
 
+    if (bgmTracks.isEmpty) {
+      await _bgmPlayer.setVolume(_sanitizeVolume(volume));
+      await _sfxPlayer.setVolume(_sanitizeVolume(volume));
+      _initialized = true;
+      return;
+    }
+
     _currentTrackIndex = _sanitizeTrackIndex(trackIndex);
-    await _bgmPlayer.setLoopMode(LoopMode.one);
+    await _bgmPlayer.setAudioSource(
+      ConcatenatingAudioSource(
+        useLazyPreparation: true,
+        children: bgmTracks
+            .map<AudioSource>(
+              (String assetPath) => AudioSource.asset(assetPath),
+            )
+            .toList(),
+      ),
+      initialIndex: _currentTrackIndex,
+      initialPosition: Duration.zero,
+    );
+    await _bgmPlayer.setLoopMode(LoopMode.all);
     await _bgmPlayer.setVolume(_sanitizeVolume(volume));
     await _sfxPlayer.setVolume(_sanitizeVolume(volume));
     _initialized = true;
@@ -68,9 +88,19 @@ class JustAudioService implements AudioService {
     await initialize(trackIndex: trackIndex, volume: volume);
     _currentTrackIndex = _sanitizeTrackIndex(trackIndex);
 
+    if (bgmTracks.isEmpty) {
+      debugPrint('[AudioService] Skip BGM play: no tracks configured.');
+      return false;
+    }
+
     try {
       await _bgmPlayer.setVolume(_sanitizeVolume(volume));
-      await _bgmPlayer.setAsset(bgmTracks[_currentTrackIndex]);
+      final int? currentIndex = _bgmPlayer.currentIndex;
+      if (currentIndex == _currentTrackIndex) {
+        await _bgmPlayer.seek(Duration.zero);
+      } else {
+        await _bgmPlayer.seek(Duration.zero, index: _currentTrackIndex);
+      }
       unawaited(
         _bgmPlayer.play().catchError((Object error, StackTrace stackTrace) {
           debugPrint('[AudioService] Failed to play BGM: $error\n$stackTrace');
@@ -80,6 +110,17 @@ class JustAudioService implements AudioService {
     } catch (error, stackTrace) {
       debugPrint('[AudioService] Failed to play BGM: $error\n$stackTrace');
       return false;
+    }
+  }
+
+  @override
+  Future<void> setBgmVolume(double volume) async {
+    try {
+      await _bgmPlayer.setVolume(_sanitizeVolume(volume));
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[AudioService] Failed to set BGM volume: $error\n$stackTrace',
+      );
     }
   }
 

@@ -1,549 +1,236 @@
 # 陪伴学习软件 - 项目接口规范手册
 
-> **版本**: v5.1
-> **最后更新**: 2026.3.24
+> **版本**: v5.2
+> **最后更新**: 2026.04.04
 > **适用对象**: 开发团队成员、AI 助手 (Claude)
 > **协作原则**: 接口契约优先，模块内部实现自治
 >
-> **状态说明**: 本文档保留为跨模块历史蓝图/协作草案。当前番茄钟后端实现、状态机和联调边界，请优先参考 `openspec/changes/improve-pomodoro-functionality/` 下的 proposal / design / specs / tasks 与当前代码实现。
+> **状态说明**: 本文档保留为跨模块协作说明，但番茄钟当前权威契约请优先参考 `openspec/changes/improve-pomodoro-functionality/` 下的 proposal / design / specs / tasks 与当前代码实现。
 
 ---
 
 ## 1. 项目概述
 
-### 1.1 核心概念
-这是一个旨在通过"虚拟伴侣"提升用户专注力的番茄钟生产力应用。应用主界面模拟图书馆环境，核心交互角色为 Live2D 角色 Hiyori，她坐在用户对面陪同学习。
+这是一个以横屏陪伴学习场景为核心的 Flutter 应用。默认入口是 `lib/main.dart`，由 `MainStage` 创建共享 `AppController`，并将其注入 UI 与其他消费方。
 
-### 1.2 技术栈
-| 组件 | 技术选型 |
+当前仓库应优先相信以下事实：
+- 番茄钟核心状态、恢复与配置逻辑以 `lib/app_controller.dart` 为准。
+- 主界面交互与番茄钟消费逻辑以 `lib/ui_widgets.dart` 为准。
+- 主入口初始化与生命周期恢复以 `lib/main.dart` 为准。
+- 角色动画层 `lib/character_view.dart` 仍是轻量占位实现。
+
+---
+
+## 2. 当前权威来源
+
+### 2.1 番茄钟
+
+以下文件共同构成当前番茄钟权威来源：
+- `openspec/changes/improve-pomodoro-functionality/proposal.md`
+- `openspec/changes/improve-pomodoro-functionality/design.md`
+- `openspec/changes/improve-pomodoro-functionality/specs/`
+- `openspec/changes/improve-pomodoro-functionality/tasks.md`
+- `lib/app_controller.dart`
+- `lib/ui_widgets.dart`
+- `lib/main.dart`
+
+### 2.2 对话系统
+
+以下文件构成当前对话系统主要依据：
+- `lib/app_controller.dart`
+- `lib/ui_widgets.dart`
+- `assets/dialogues/dialogues.json`
+- `docs/talking_interface.md`
+
+---
+
+## 3. 当前架构职责
+
+### 3.1 `lib/main.dart`
+- 创建共享 `AppController`
+- 在 `MainStage.initState()` 中尽早调用 `controller.initialize()`
+- 用 `FutureBuilder` 保证恢复完成后再进入正常 UI
+- 转发生命周期事件到 controller
+
+### 3.2 `lib/app_controller.dart`
+- 维护番茄钟、对话、XP、音乐、监督提醒等状态
+- 负责番茄钟状态机、持久化、恢复与时间同步
+- 通过 `ValueNotifier` 暴露高频/简单状态，通过 `ChangeNotifier` 暴露复合状态
+- 对外提供显式行为接口，UI 不应直接改内部状态
+
+### 3.3 `lib/ui_widgets.dart`
+- 负责主界面展示与交互转发
+- 通过 `ValueListenableBuilder` / `ListenableBuilder` 消费 controller 状态
+- 顶部进度、倒计时、配置输入与控制按钮都应尽量只消费 controller contract
+
+### 3.4 `lib/character_view.dart`
+- 当前仍是轻量占位实现
+- 正式角色动作建议优先读取 `pomodoroState`
+- 若未来要区分“待开始占位态”与“真实休息态”，需再结合 `phaseStatus`
+
+---
+
+## 4. 当前番茄钟状态契约
+
+### 4.1 核心状态
+
+当前番茄钟相关核心状态包括：
+
+| 状态 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `remainingSeconds` | `ValueNotifier<int>` | 当前阶段剩余秒数 |
+| `pomodoroState` | `ValueNotifier<PomodoroState>` | 业务阶段语义：`resting` / `studying` |
+| `phaseStatus` | `ValueNotifier<PomodoroPhaseStatus>` | 运行控制语义：`ready` / `running` / `paused` |
+| `focusDurationSeconds` | `ValueNotifier<int>` | 专注时长配置，默认 `1500` |
+| `restDurationSeconds` | `ValueNotifier<int>` | 休息时长配置，默认 `300` |
+| `cycleCount` | `ValueNotifier<int?>` | 有限循环次数，`null` 表示不循环 |
+| `completedFocusCycles` | `ValueNotifier<int>` | 当前 session 已完成的专注轮数 |
+| `isDrawerOpen` | `ValueNotifier<bool>` | UI 抽屉/面板状态 |
+| `currentDate` | `ValueNotifier<String>` | 顶部日期显示 |
+
+### 4.2 状态职责边界
+
+- `pomodoroState`：只表达业务阶段语义，供动画、对话、陪伴行为消费。
+- `phaseStatus`：只表达运行控制语义，供按钮态、恢复、持久化与控制逻辑消费。
+- `remainingSeconds`：表达当前阶段剩余时间。
+- `isActive`：当前代码中仍存在，但对番茄钟正式控制 contract 来说属于兼容性状态；新逻辑应优先依赖 `phaseStatus`。
+
+### 4.3 固定组合解释
+
+| 组合 | 语义 |
 | :--- | :--- |
-| 开发框架 | Flutter (Dart) |
-| 动画引擎 | Live2D Cubism SDK |
-| 状态管理 | ValueNotifier + ChangeNotifier 混合方案 |
-| 本地存储 | SharedPreferences / Hive |
-| 协作工具 | Git (GitHub) |
-
-### 1.3 文件架构
-```
-lib/
-├── main.dart                 # 全栈架构师 (组长)
-├── app_controller.dart       # 系统后端工程师 (组员 C)
-├── ui_widgets.dart            # 前端交互工程师 (组员 D)
-├── character_view.dart       # 图形引擎工程师 (组员 B)
-└── models/
-    └── user_stats.dart       # 数据模型定义 (共享)
-
-assets/
-├── dialogues.json            # 对话文本
-├── tips.json                 # Tips 库
-├── background.webp           # 背景图
-└── character/                # Live2D 模型文件
-```
+| `resting + ready` | 待开始 / 下一轮专注未开始 |
+| `studying + running` | 学习中 |
+| `studying + paused` | 学习暂停 |
+| `resting + running` | 休息中 |
+| `resting + paused` | 休息暂停 |
 
 ---
 
-## 2. 架构说明：逻辑中枢模式
+## 5. 当前番茄钟公开接口
 
-### 2.1 协作拓扑图
-```mermaid
-graph TB
-    A[main.dart<br/>组长整合] --> B[app_controller.dart<br/>逻辑中枢 C]
-    B --> C[ui_widgets.dart<br/>前端 D]
-    B --> D[character_view.dart<br/>动画 B]
-    
-    style B fill:#f9f,stroke:#333
-    style A fill:#bbf,stroke:#333
-    style C fill:#bfb,stroke:#333
-    style D fill:#fbb,stroke:#333
-```
+### 5.1 核心方法
 
-### 2.2 状态管理策略
-| 状态类型 | 技术方案 | 适用场景 | 所属模块 |
-| :--- | :--- | :--- | :--- |
-| **简单值状态** | `ValueNotifier<T>` | 倒计时、布尔开关、数值 | `app_controller.dart` (现有) |
-| **复杂交互状态** | `ChangeNotifier` | 对话系统、多变量关联 | `app_controller.dart` (新增) |
+| 方法 | 说明 |
+| :--- | :--- |
+| `initialize()` | 启动时恢复配置与番茄钟运行快照 |
+| `startTimer()` | 从 ready 启动专注，或从 paused 恢复当前阶段 |
+| `pauseTimer()` | 暂停当前运行阶段 |
+| `resetTimer()` | 回到默认 ready 状态 |
+| `updateFocusDuration(int seconds)` | 更新专注时长配置 |
+| `updateRestDuration(int seconds)` | 更新休息时长配置 |
+| `updateCycleCount(int? count)` | 更新循环次数配置 |
+| `restoreDefaultDurations()` | 恢复默认 25/5 配置 |
+| `synchronizeWithCurrentTime()` | 生命周期恢复后同步时间与阶段 |
+| `handleLifecycleStateChanged(...)` | 处理应用生命周期变化 |
+| `handleAppBackgrounded()` | 标记后台态并停止前台相关行为 |
+| `fetchHistoryData()` | 统计面板占位接口，非本次番茄钟核心 contract |
 
-**核心原则**: 
-- `ValueNotifier` 用于高频更新 (如倒计时每秒变化)
-- `ChangeNotifier` 用于低频状态变更 (如对话触发、业务状态切换)
-- 状态只在 `app_controller.dart` 修改，其他模块只监听、不修改
+### 5.2 兼容性方法
 
----
-
-## 3. 状态广播接口 (State Interfaces)
-
-### 3.1 ValueNotifier 状态 (现有，组员 C 维护)
-| 变量名 | 类型 | 描述 | 使用者 | 更新频率 |
-| :--- | :--- | :--- | :--- | :--- |
-| `remainingSeconds` | `ValueNotifier<int>` | 倒计时秒数 (默认 1500 秒) | 组员 D (进度条/数字) | 高频 (每秒) |
-| `isActive` | `ValueNotifier<bool>` | 计时器运行状态 | 组员 B (动画) / 组员 D (按钮) | 低频 |
-| `isDrawerOpen` | `ValueNotifier<bool>` | 上拉菜单状态 | 组长 A (布局调整) | 低频 |
-| `currentDate` | `ValueNotifier<String>` | 格式化日期 (如"2026 年 1 月 13 日") | 组员 D (顶部显示) | 极低频 |
-
-### 3.2 ChangeNotifier 状态 (新增，对话系统)
-| 变量名 | 类型 | 描述 | 持久化 | 使用者 |
-| :--- | :--- | :--- | :--- | :--- |
-| `isTalking` | `bool` | 是否处于对话状态 | ❌ | 组员 D (气泡显示) / 组员 B (动画) |
-| `currentDialogue` | `String` | 当前显示的对话文本 | ❌ | 组员 D (气泡内容) |
-| `pomodoroState` | `enum` | 业务状态 (studying/resting) | ❌ | 组员 B (动画) / 组员 D (UI) |
-| `focusStartTime` | `DateTime?` | 专注开始时间戳 | ✅ | 组员 C (时间同步) |
-
-### 3.3 业务状态枚举
-```dart
-enum PomodoroState {
-  resting,    // 休息中 (冷启动默认)
-  studying,   // 专注中
-}
-```
-
-### 3.4 对话类型枚举
-```dart
-enum DialogueType {
-  clicked,        // 角色被点击
-  completed,      // 任务完成
-  idle,           // 空闲超时
-  resume,         // App 返回 (仍在专注)
-  start_focus,    // 开始专注
-}
-```
+| 方法 | 说明 |
+| :--- | :--- |
+| `toggleTimer()` | 兼容性封装：运行中时委托 `pauseTimer()`，否则委托 `startTimer()` |
 
 ---
 
-## 4. 逻辑触发接口 (Method Interfaces)
+## 6. 当前 UI / Controller 协作规则
 
-### 4.1 后端模块 (app_controller.dart) - 组员 C
-
-**职责**: 状态源 (Single Source of Truth)、对话逻辑、数据加载
-
-#### 4.1.1 类定义
-```dart
-class AppController extends ChangeNotifier {
-  // ============ ValueNotifier 状态 (现有) ============
-  final ValueNotifier<int> remainingSeconds;
-  final ValueNotifier<bool> isActive;
-  final ValueNotifier<bool> isDrawerOpen;
-  final ValueNotifier<String> currentDate;
-  
-  // ============ ChangeNotifier 状态 (对话系统新增) ============
-  bool _isTalking = false;
-  String _currentDialogue = '';
-  PomodoroState _pomodoroState = PomodoroState.resting;
-  DateTime? _focusStartTime;
-  
-  // ============ 状态读取接口 (Getter) ============
-  bool get isTalking => _isTalking;
-  String get currentDialogue => _currentDialogue;
-  PomodoroState get pomodoroState => _pomodoroState;
-  DateTime? get focusStartTime => _focusStartTime;
-  
-  // ============ 状态变更接口 (Public Methods) ============
-  void triggerDialogue(String type);
-  void nextDialogue();
-  void skipDialogue();
-  void setPomodoroState(PomodoroState newState);
-  void handleAppResume();
-  void startFocus();
-  void finishFocus();
-  
-  // ============ 生命周期接口 ============
-  Future<void> loadData();
-  Future<void> saveData();
-  
-  // ============ 资源释放 ============
-  void dispose();
-}
-```
-
-#### 4.1.2 方法详细规格
-| 方法名 | 参数 | 返回值 | 副作用 | 调用方 |
-| :--- | :--- | :--- | :--- | :--- |
-| `triggerDialogue` | `type: String` | `void` | 加载队列、`notifyListeners()` | B / C / main |
-| `nextDialogue` | 无 | `void` | 索引++、`notifyListeners()` | D |
-| `skipDialogue` | 无 | `void` | 重置状态、`notifyListeners()` | D |
-| `setPomodoroState` | `newState: PomodoroState` | `void` | 状态变更、`notifyListeners()` | D / main |
-| `handleAppResume` | 无 | `void` | 时间同步、`notifyListeners()` | main |
-| `startFocus` | 无 | `void` | 进入 studying、`notifyListeners()` | D |
-| `finishFocus` | 无 | `void` | 进入 resting、`notifyListeners()` | C (计时器) |
-| `loadData` | 无 | `Future<void>` | 从本地存储加载 | main |
-| `saveData` | 无 | `Future<void>` | 保存到本地存储 | C 内部 |
-| `toggleTimer` | 无 | `void` | 切换计时器状态 | D |
-| `resetTimer` | 无 | `void` | 重置番茄钟 | D |
-| `fetchHistoryData` | 无 | `void` | 读取历史时长 | D |
-
-#### 4.1.3 状态变更通知机制
-```dart
-// ValueNotifier 状态变更
-remainingSeconds.value = newValue;  // 自动通知监听者
-
-// ChangeNotifier 状态变更
-_isTalking = true;
-notifyListeners();  // 手动通知监听者
-```
-
-#### 4.1.4 对话优先级规则
-| 业务状态 | 允许触发对话 | 说明 |
-| :--- | :--- | :--- |
-| `PomodoroState.resting` | ✅ | 休息状态，允许对话 |
-| `PomodoroState.studying` | ❌ | 专注中，禁止新对话 (resume 除外) |
+- UI 只读 controller 状态。
+- UI 只通过 controller 公共方法表达用户意图。
+- UI 不应再维护第二套“真实剩余时间”或“真实进度”。
+- 顶部进度应由 `remainingSeconds` 与 `currentPhaseDurationSeconds` 推导。
+- 配置输入应统一走 `updateFocusDuration` / `updateRestDuration` / `updateCycleCount`。
+- 按钮态与恢复语义应优先读取 `phaseStatus`，不要再把 `isActive` 作为新 contract 的唯一依据。
 
 ---
 
-### 4.2 前端模块 (ui_widgets.dart) - 组员 D
+## 7. 当前启动与恢复路径
 
-**职责**: UI 展示、用户交互捕获
+### 7.1 启动
 
-#### 4.2.1 依赖注入接口
 ```dart
-class DialogueUI extends StatelessWidget {
-  final AppController controller;  // 必须通过构造函数注入
-  
-  const DialogueUI({required this.controller});
-}
-```
+class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
+  late final AppController controller;
+  late final Future<void> _initialization;
 
-#### 4.2.2 状态监听接口
-```dart
-// 方式 1: 监听 ChangeNotifier (对话状态)
-ListenableBuilder(
-  listenable: controller,
-  builder: (context, child) {
-    if (controller.isTalking) {
-      return buildDialogueOverlay();
-    } else {
-      return SizedBox.shrink();
-    }
-  },
-)
-
-// 方式 2: 监听 ValueNotifier (倒计时等)
-ValueListenableBuilder<int>(
-  valueListenable: controller.remainingSeconds,
-  builder: (context, value, child) {
-    return Text(_formatTime(value));
-  },
-)
-```
-
-#### 4.2.3 用户交互接口
-| 交互事件 | 调用方法 | 说明 |
-| :--- | :--- | :--- |
-| 点击 Skip 按钮 | `controller.skipDialogue()` | 退出对话 |
-| 点击气泡外区域 | `controller.nextDialogue()` | 下一条对话 |
-| 点击开始专注按钮 | `controller.startFocus()` | 进入专注状态 |
-| 点击 UI 功能按钮 | 直接执行按钮逻辑 | 对话中允许操作 |
-
-#### 4.2.4 遮罩层行为规范
-```dart
-// 透明遮罩层必须设置 HitTestBehavior.translucent
-GestureDetector(
-  behavior: HitTestBehavior.translucent,  // 允许事件穿透到下层 UI
-  onTap: () => controller.nextDialogue(),
-  child: Container(color: Colors.transparent),
-)
-```
-
----
-
-### 4.3 动画模块 (character_view.dart) - 组员 B
-
-**职责**: 根据业务状态播放对应动画
-
-#### 4.3.1 依赖注入接口
-```dart
-class CharacterView extends StatefulWidget {
-  final AppController controller;  // 必须通过构造函数注入
-  
-  const CharacterView({required this.controller});
-}
-```
-
-#### 4.3.2 状态监听接口
-```dart
-// 监听 ChangeNotifier (业务状态、对话状态)
-controller.addListener(() {
-  _updateMotion();
-});
-```
-
-#### 4.3.3 动画状态映射
-| 业务状态 | Live2D 动作 | 调用方法 |
-| :--- | :--- | :--- |
-| `PomodoroState.studying` | `study` (学习) | `playMotion("study")` |
-| `PomodoroState.resting` | `idle` (待机) | `playMotion("idle")` |
-| `isTalking = true` | `talk` (说话) | `playMotion("talk")` |
-
-#### 4.3.4 角色点击接口
-```dart
-// 点击角色时触发对话
-GestureDetector(
-  onTap: () {
-    if (!controller.isTalking && controller.pomodoroState == PomodoroState.resting) {
-      controller.triggerDialogue("clicked");
-    }
-  },
-  child: Live2DWidget(),
-)
-```
-
----
-
-### 4.4 架构模块 (main.dart) - 组长
-
-**职责**: 初始化、依赖注入、生命周期监听
-
-#### 4.4.1 初始化接口
-```dart
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  final appController = AppController();
-  await appController.loadData();  // 加载持久化数据
-  
-  runApp(
-    MaterialApp(
-      home: Scaffold(
-        body: Stack(
-          children: [
-            CharacterView(controller: appController),
-            DialogueUI(controller: appController),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-```
-
-#### 4.4.2 生命周期监听接口
-```dart
-class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-  
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      appController.handleAppResume();
-    }
-  }
-  
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
+    controller = AppController();
+    _initialization = controller.initialize();
   }
 }
 ```
 
----
+### 7.2 首帧保护
 
-## 5. 业务状态流转规则
-
-### 5.1 状态流转图
-```mermaid
-stateDiagram-v2
-    direction LR
-    
-    [*] --> resting: App 冷启动
-    
-    resting --> studying: 开始专注
-    studying --> resting: 专注完成
-    
-    state "🟢 resting" as resting_state
-    state "🔴 studying" as studying_state
-    
-    resting_state : 休息状态
-    resting_state : ✅ 允许对话
-    
-    studying_state : 专注状态
-    studying_state : ❌ 禁止新对话
-    
-    note right of resting
-        💬 对话触发点:
-        1. 开始专注 → start_focus
-        2. 角色被点击 → clicked
-        3. 空闲超时 → idle
-    end note
-    
-    note right of studying
-        💬 对话触发点:
-        1. 专注完成 → completed
-        2. App 返回 (仍在专注) → resume
-    end note
-```
-
-### 5.2 对话触发条件总览
-| ID | 触发场景 | 业务状态 | 对话类型 | 检测模块 | 调用方法 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Ⅰ | 角色被点击 | resting | clicked | character_view.dart (B) | `triggerDialogue("clicked")` |
-| Ⅱ | 番茄钟任务完成 | studying→resting | completed | app_controller.dart (C) | `finishFocus()` |
-| Ⅲ | 用户空闲超时 | resting | idle | app_controller.dart (C) | `triggerDialogue("idle")` |
-| Ⅳ | App 离开重进 (仍在专注) | studying | resume | main.dart (组长) | `handleAppResume()` |
-| Ⅴ | 开始专注 | resting→studying | start_focus | ui_widgets.dart (D) | `startFocus()` |
-
-### 5.3 App 返回时的状态同步
-| 返回时状态 | 时间判断 | 预期行为 | 对话触发 |
-| :--- | :--- | :--- | :--- |
-| `studying` | 剩余时间 > 0 | 同步剩余时间 | `resume` |
-| `studying` | 剩余时间 ≤ 0 | 状态同步为 resting | `completed` |
-| `resting` | - | 保持 resting | 无 |
-
----
-
-## 6. 用户交互优先级规则
-
-| 优先级 | 点击区域 | 预期行为 | 负责模块 |
-| :--- | :--- | :--- | :--- |
-| P1 (最高) | Skip 按钮 | `skipDialogue()` | ui_widgets.dart |
-| P2 | UI 功能按钮 | 执行按钮逻辑 (对话保持) | ui_widgets.dart |
-| P3 | 角色点击 | `triggerDialogue("clicked")` (仅 resting 状态) | character_view.dart |
-| P4 (最低) | 空白区域 | `nextDialogue()` | ui_widgets.dart |
-
----
-
-## 7. 资源路径规范
-
-所有资源必须存放在项目根目录的 `assets/` 文件夹下，并在 `pubspec.yaml` 中注册：
-
-```yaml
-flutter:
-  assets:
-    - assets/background.webp
-    - assets/character/model.model3.json
-    - assets/dialogues.json
-    - assets/tips.json
-    - assets/Placeholder.png
-```
-
-| 资源类型 | 路径 | 说明 |
-| :--- | :--- | :--- |
-| 背景图 | `assets/background.webp` | 横屏图书馆背景 |
-| Live2D 模型 | `assets/character/model.model3.json` | Hiyori 模型入口文件 |
-| 对话文本 | `assets/dialogues.json` | 对话内容配置 |
-| Tips 库 | `assets/tips.json` | 自律 Tips 配置 |
-| 占位图 | `assets/Placeholder.png` | 加载占位图 |
-
----
-
-## 8. 边界情况处理 (Edge Cases)
-
-| 场景 | 预期行为 | 负责模块 |
-| :--- | :--- | :--- |
-| 对话队列索引超出范围 | 自动调用 `skipDialogue()` | app_controller.dart |
-| 对话中触发新对话 | 打断当前对话，加载新队列 | app_controller.dart |
-| JSON 文件加载失败 | 使用默认备用文本 | app_controller.dart |
-| 对话中 UI 按钮点击 | 按钮逻辑执行 + 对话保持 | ui_widgets.dart |
-| 对话中角色点击 | 无响应 (对话中禁用) | character_view.dart |
-| App 后台切换 | 保持对话状态不变 | app_controller.dart |
-| 专注中触发对话 | 忽略，不触发 (resume 除外) | app_controller.dart |
-| 专注中角色点击 | 无响应 (专注中禁用) | character_view.dart |
-
----
-
-## 9. 开发检查清单 (Development Checklist)
-
-### 9.1 组员 C (后端)
-- [ ] 保留现有 `ValueNotifier` 状态变量
-- [ ] 新增 `ChangeNotifier` 继承 (对话系统)
-- [ ] 实现所有公共方法接口
-- [ ] 确保 ChangeNotifier 状态变化调用 `notifyListeners()`
-- [ ] 确保 ValueNotifier 状态变化使用 `.value = newValue`
-- [ ] 实现 JSON 加载逻辑
-- [ ] 实现数据持久化 (`loadData`/`saveData`)
-- [ ] 实现对话优先级规则检查
-- [ ] 实现 `dispose()` 方法释放所有资源
-
-### 9.2 组员 D (前端)
-- [ ] 实现依赖注入 (构造函数接收 controller)
-- [ ] 实现 `ListenableBuilder` 状态监听 (ChangeNotifier)
-- [ ] 实现 `ValueListenableBuilder` 状态监听 (ValueNotifier)
-- [ ] 实现 Skip 按钮点击处理
-- [ ] 实现气泡外点击处理
-- [ ] 实现遮罩层 `HitTestBehavior.translucent`
-- [ ] 实现开始专注按钮 (`startFocus()`)
-- [ ] 测试对话中 UI 按钮可点击
-
-### 9.3 组员 B (动画)
-- [ ] 实现依赖注入 (构造函数接收 controller)
-- [ ] 实现 `addListener` 状态监听
-- [ ] 实现业务状态到动画动作的映射
-- [ ] 实现角色点击检测
-- [ ] 实现对话中/专注中禁用新对话触发
-
-### 9.4 组长 (架构)
-- [ ] 创建 `dialogues.json` 文件
-- [ ] 配置 `assets` 路径
-- [ ] 实现 `WidgetsBindingObserver` 生命周期监听
-- [ ] 实现依赖注入
-- [ ] 组织接口联调测试
-- [ ] 确保 `dispose()` 正确调用
-
----
-
-## 10. 版本历史 (Version History)
-
-| 版本 | 日期 | 变更说明 |
-| :--- | :--- | :--- |
-| v1.0 | 2026.1 | 初始版本，定义 MVP 核心接口 |
-| v2.0 | 2026.2 | 新增对话系统接口规范 |
-| v3.0 | 2026.3 | 分离业务状态与交互状态 |
-| v4.0 | 2026.3.15 | 采用 ValueNotifier+ChangeNotifier 混合方案 |
-| v5.0 | 2026.3.18 | 删除 `continue_focus` 类型，用 `resume` 代替 App 返回场景 |
-
----
-
-## 11. 附录：快速参考 (Quick Reference)
-
-### 11.1 状态读取速查
 ```dart
-// ChangeNotifier 状态
-controller.isTalking;           // 是否正在对话
-controller.currentDialogue;     // 当前对话文本
-controller.pomodoroState;         // 业务状态
-controller.focusStartTime;      // 专注开始时间
-
-// ValueNotifier 状态
-controller.remainingSeconds.value;  // 倒计时秒数
-controller.isActive.value;          // 计时器运行状态
-controller.isDrawerOpen.value;      // 菜单状态
-controller.currentDate.value;       // 当前日期
+FutureBuilder<void>(
+  future: _initialization,
+  builder: (context, snapshot) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return UIWidgets(controller: controller);
+  },
+)
 ```
 
-### 11.2 接口调用速查
+### 7.3 生命周期恢复
+
+- app 切回前台后，`MainStage` 会把生命周期事件转发给 controller。
+- controller 负责重新同步当前时间、剩余秒数和阶段，不由 UI 自己推算恢复值。
+
+---
+
+## 8. 当前对话与角色联动口径
+
+- 对话触发、队列、仲裁与文案加载以 `lib/app_controller.dart` 为准。
+- 角色主动作语义应优先读取 `pomodoroState`：
+  - `studying` → 学习动作
+  - `resting` → 休息/待机动作
+- 若未来需要区分 `resting + ready` 与 `resting + running`，必须再结合 `phaseStatus`。
+
+---
+
+## 9. 当前已知非目标 / 非权威内容
+
+以下内容当前不应被当作番茄钟正式 contract：
+- `startFocus()` / `finishFocus()` 一类旧方法名
+- `focusStartTime` 单字段式旧恢复模型
+- `SharedPreferences / Hive` 并列作为当前正式持久化决策
+- 用 `isActive` 单独表达全部番茄钟运行语义
+- 历史统计、分享卡片最终数据模型
+
+---
+
+## 10. 快速参考
+
+### 10.1 读取状态
+
 ```dart
-// 对话系统
-controller.triggerDialogue("clicked");    // 触发对话
-controller.nextDialogue();                // 下一条
-controller.skipDialogue();                // 跳过
-
-// 番茄钟系统
-controller.startFocus();                  // 开始专注
-controller.finishFocus();                 // 完成专注
-controller.handleAppResume();             // App 返回处理
-controller.toggleTimer();                 // 切换计时器
-controller.resetTimer();                  // 重置计时器
-
-// 数据系统
-controller.loadData();                    // 加载数据
-controller.fetchHistoryData();            // 获取历史数据
+controller.remainingSeconds.value;
+controller.pomodoroState.value;
+controller.phaseStatus.value;
+controller.focusDurationSeconds.value;
+controller.restDurationSeconds.value;
+controller.cycleCount.value;
+controller.completedFocusCycles.value;
 ```
 
-### 11.3 混合方案速查
-```dart
-// ValueNotifier 变更 (高频)
-controller.remainingSeconds.value = 1500;
+### 10.2 调用接口
 
-// ChangeNotifier 变更 (低频)
-controller.startFocus();
-// 内部会调用 notifyListeners()
+```dart
+await controller.initialize();
+controller.startTimer();
+controller.pauseTimer();
+controller.resetTimer();
+controller.updateFocusDuration(25 * 60);
+controller.updateRestDuration(5 * 60);
+controller.updateCycleCount(4);
 ```
 
 ---
 
-> **文档结束**  
-> 如有接口变更，请更新此文档并通知所有组员  
-> **协作原则**: 接口契约优先，模块内部实现自治  
-> **AI 助手提示**: 本规范供 Claude 理解项目架构和接口逻辑，辅助代码生成和问题解答
+> 如需确认当前仓库真实状态，请直接回到 `lib/app_controller.dart`、`lib/ui_widgets.dart`、`lib/main.dart` 与 OpenSpec 变更目录核对。

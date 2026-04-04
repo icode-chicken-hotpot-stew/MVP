@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 
@@ -136,6 +135,13 @@ class _UIWidgetsState extends State<UIWidgets> {
     return '$totalHours:$minutesText:$secondsText';
   }
 
+  String _formatStudyDurationFromXp(int xp) {
+    final int minutes = xp < 0 ? 0 : xp ~/ 10;
+    final int hours = minutes ~/ 60;
+    final int remainingMinutes = minutes % 60;
+    return '${hours}时${remainingMinutes}分';
+  }
+
   void _savePomodoroConfig() {
     if (_isTimerRunning) {
       _closePomodoroConfig();
@@ -148,23 +154,48 @@ class _UIWidgetsState extends State<UIWidgets> {
 
   void _changeFocusMinutes(int delta) {
     final int current = widget.controller.focusDurationSeconds.value ~/ 60;
-    final int updated = max(1, current + delta);
+    final int updated = current + delta;
+    if (updated < kMinFocusDurationMinutes ||
+        updated > kMaxFocusDurationMinutes) {
+      return;
+    }
     widget.controller.updateFocusDuration(updated * 60);
     _focusMinutesController.text = updated.toString();
   }
 
+  void _setFocusMinutesToMinimum() {
+    widget.controller.updateFocusDuration(kMinFocusDurationMinutes * 60);
+    _focusMinutesController.text = kMinFocusDurationMinutes.toString();
+  }
+
   void _changeRestMinutes(int delta) {
     final int current = widget.controller.restDurationSeconds.value ~/ 60;
-    final int updated = max(1, current + delta);
+    final int updated = current + delta;
+    if (updated < kMinRestDurationMinutes || updated > kMaxRestDurationMinutes) {
+      return;
+    }
     widget.controller.updateRestDuration(updated * 60);
     _restMinutesController.text = updated.toString();
   }
 
+  void _setRestMinutesToMinimum() {
+    widget.controller.updateRestDuration(kMinRestDurationMinutes * 60);
+    _restMinutesController.text = kMinRestDurationMinutes.toString();
+  }
+
   void _changeCycleCount(int delta) {
     final int current = widget.controller.cycleCount.value ?? 0;
-    final int updated = max(0, current + delta);
+    final int updated = current + delta;
+    if (updated < 0 || updated > kMaxPomodoroCycleCount) {
+      return;
+    }
     widget.controller.updateCycleCount(updated == 0 ? null : updated);
     _cycleCountController.text = updated.toString();
+  }
+
+  void _setCycleCountToZero() {
+    widget.controller.updateCycleCount(null);
+    _cycleCountController.text = '0';
   }
 
   Widget _buildAdjustRow({
@@ -172,6 +203,7 @@ class _UIWidgetsState extends State<UIWidgets> {
     required int value,
     required VoidCallback onIncrease,
     required VoidCallback onDecrease,
+    required VoidCallback onDecreaseLongPress,
     required VoidCallback onSuperIncrease,
   }) {
     return Container(
@@ -220,6 +252,7 @@ class _UIWidgetsState extends State<UIWidgets> {
             height: 28,
             child: IconButton(
               onPressed: onDecrease,
+              onLongPress: onDecreaseLongPress,
               icon: const Icon(Icons.remove, size: 16),
               color: const Color(0xFF6D4C41),
               padding: EdgeInsets.zero,
@@ -628,6 +661,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                                                 _changeFocusMinutes(1),
                                             onDecrease: () =>
                                                 _changeFocusMinutes(-1),
+                                            onDecreaseLongPress: () =>
+                                                _setFocusMinutesToMinimum(),
                                             onSuperIncrease: () =>
                                                 _changeFocusMinutes(10),
                                           ),
@@ -644,6 +679,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                                                 _changeRestMinutes(1),
                                             onDecrease: () =>
                                                 _changeRestMinutes(-1),
+                                            onDecreaseLongPress: () =>
+                                                _setRestMinutesToMinimum(),
                                             onSuperIncrease: () =>
                                                 _changeRestMinutes(10),
                                           ),
@@ -660,6 +697,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                                                 _changeCycleCount(1),
                                             onDecrease: () =>
                                                 _changeCycleCount(-1),
+                                            onDecreaseLongPress: () =>
+                                                _setCycleCountToZero(),
                                             onSuperIncrease: () =>
                                                 _changeCycleCount(10),
                                           ),
@@ -927,10 +966,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                             valueListenable: widget.controller.dailyXp,
                             builder: (context, dailyXp, _) {
                               return Text(
-                                '今日学习时长：$dailyXp',
+                                '今日学习时长 ： ${_formatStudyDurationFromXp(dailyXp)}',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.85),
-                                  fontSize: 19,
+                                  fontSize: 18,
                                   fontFamily: 'ZhuoKai',
                                   shadows: const [
                                     BoxShadow(
@@ -947,10 +986,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                             valueListenable: widget.controller.totalXp,
                             builder: (context, totalXp, _) {
                               return Text(
-                                '累计学习时长：$totalXp',
+                                '累计学习时长 ： ${_formatStudyDurationFromXp(totalXp)}',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.85),
-                                  fontSize: 19,
+                                  fontSize: 16,
                                   fontFamily: 'ZhuoKai',
                                   shadows: const [
                                     BoxShadow(

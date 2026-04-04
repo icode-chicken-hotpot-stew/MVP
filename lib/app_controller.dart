@@ -10,6 +10,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const int kDefaultPomodoroSeconds = 1500;
 const int kDefaultRestSeconds = 300;
+const int kMinFocusDurationMinutes = 5;
+const int kMaxFocusDurationMinutes = 300;
+const int kMinRestDurationMinutes = 1;
+const int kMaxRestDurationMinutes = 300;
+const int kMaxPomodoroCycleCount = 100;
 const int kDailyXpCap = 2000;
 const int kDefaultColdStartDialogueDelaySeconds = 5;
 const Duration kIdleDialogueTimeout = Duration(seconds: 60);
@@ -302,6 +307,7 @@ class AppController extends ChangeNotifier {
   bool _stage3mSent = false;
   bool _stage6mSent = false;
   bool _musicPausedForLifecycle = false;
+  int? _userPausedTrackIndex;
   _UiSfxType? _lastUiSfxType;
   DateTime? _lastUiSfxTriggeredAt;
   bool _isInForeground = true;
@@ -372,11 +378,11 @@ class AppController extends ChangeNotifier {
       _applySnapshot(readySnapshot, startTickerIfRunning: false);
       await _persistSnapshot(readySnapshot);
     } else {
-      final int restoredFocus = _sanitizeDurationOrDefault(
+      final int restoredFocus = _sanitizeFocusDurationOrDefault(
         snapshot.focusDurationSeconds,
         kDefaultPomodoroSeconds,
       );
-      final int restoredRest = _sanitizeDurationOrDefault(
+      final int restoredRest = _sanitizeRestDurationOrDefault(
         snapshot.restDurationSeconds,
         kDefaultRestSeconds,
       );
@@ -609,7 +615,7 @@ class AppController extends ChangeNotifier {
   void updateFocusDuration(int seconds) {
     registerUserInteraction();
 
-    if (!_isValidDuration(seconds)) {
+    if (!_isValidFocusDuration(seconds)) {
       return;
     }
     if (focusDurationSeconds.value == seconds) {
@@ -630,7 +636,7 @@ class AppController extends ChangeNotifier {
   void updateRestDuration(int seconds) {
     registerUserInteraction();
 
-    if (!_isValidDuration(seconds)) {
+    if (!_isValidRestDuration(seconds)) {
       return;
     }
     if (restDurationSeconds.value == seconds) {
@@ -875,20 +881,32 @@ class AppController extends ChangeNotifier {
     if (isMusicPlaying.value) {
       isMusicPlaying.value = false;
       musicAutoPlayEnabled.value = false;
+      _userPausedTrackIndex = currentTrackIndex.value;
       await _audioService.pauseBgm();
       await _persistMusicState();
       return;
     }
 
     musicAutoPlayEnabled.value = true;
-    final bool started = await _playBgmForCurrentState();
+    final bool canResumePausedTrack =
+        _userPausedTrackIndex != null &&
+        _userPausedTrackIndex == currentTrackIndex.value;
+    final bool started = canResumePausedTrack
+        ? await _audioService.resumeBgm(volume: musicVolume.value)
+        : await _playBgmForCurrentState();
     isMusicPlaying.value = started;
+    if (started) {
+      _userPausedTrackIndex = null;
+    }
     await _persistMusicState();
   }
 
   Future<void> playNextTrack() async {
     final int trackCount = max(1, _audioService.trackCount);
     currentTrackIndex.value = (currentTrackIndex.value + 1) % trackCount;
+    if (!isMusicPlaying.value) {
+      _userPausedTrackIndex = null;
+    }
     await _persistMusicState();
     if (isMusicPlaying.value || musicAutoPlayEnabled.value) {
       final bool started = await _playBgmForCurrentState();
@@ -901,6 +919,9 @@ class AppController extends ChangeNotifier {
     final int trackCount = max(1, _audioService.trackCount);
     currentTrackIndex.value =
         (currentTrackIndex.value - 1 + trackCount) % trackCount;
+    if (!isMusicPlaying.value) {
+      _userPausedTrackIndex = null;
+    }
     await _persistMusicState();
     if (isMusicPlaying.value || musicAutoPlayEnabled.value) {
       final bool started = await _playBgmForCurrentState();
@@ -918,13 +939,7 @@ class AppController extends ChangeNotifier {
     final double sanitized = volume.clamp(0.0, 1.0);
     musicVolume.value = sanitized;
     await _persistMusicState();
-    if (isMusicPlaying.value || musicAutoPlayEnabled.value) {
-      final bool started = await _playBgmForCurrentState();
-      if (isMusicPlaying.value) {
-        isMusicPlaying.value = started;
-        await _persistMusicState();
-      }
-    }
+    await _audioService.setBgmVolume(sanitized);
   }
 
   Future<void> triggerUiOpenSfx() async {
@@ -1049,11 +1064,14 @@ class AppController extends ChangeNotifier {
           : null,
       phaseDurationSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
-          : _sanitizeDurationOrDefault(
+          : snapshot.pomodoroState == PomodoroState.studying
+          ? _sanitizeFocusDurationOrDefault(
               snapshot.phaseDurationSeconds,
-              snapshot.pomodoroState == PomodoroState.studying
-                  ? focusSeconds
-                  : restSeconds,
+              focusSeconds,
+            )
+          : _sanitizeRestDurationOrDefault(
+              snapshot.phaseDurationSeconds,
+              restSeconds,
             ),
       remainingSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
@@ -1062,11 +1080,14 @@ class AppController extends ChangeNotifier {
               phaseDurationSeconds:
                   snapshot.phaseStatus == PomodoroPhaseStatus.ready
                   ? focusSeconds
-                  : _sanitizeDurationOrDefault(
+                  : snapshot.pomodoroState == PomodoroState.studying
+                  ? _sanitizeFocusDurationOrDefault(
                       snapshot.phaseDurationSeconds,
-                      snapshot.pomodoroState == PomodoroState.studying
-                          ? focusSeconds
-                          : restSeconds,
+                      focusSeconds,
+                    )
+                  : _sanitizeRestDurationOrDefault(
+                      snapshot.phaseDurationSeconds,
+                      restSeconds,
                     ),
               fallback: snapshot.pomodoroState == PomodoroState.studying
                   ? focusSeconds
@@ -1889,18 +1910,31 @@ class AppController extends ChangeNotifier {
     return remaining;
   }
 
-  bool _isValidDuration(int seconds) => seconds > 0;
-
-  int _sanitizeDurationOrDefault(int seconds, int fallback) {
-    return _isValidDuration(seconds) ? seconds : fallback;
+  bool _isValidFocusDuration(int seconds) {
+    return seconds >= kMinFocusDurationMinutes * 60 &&
+        seconds <= kMaxFocusDurationMinutes * 60;
   }
+
+  bool _isValidRestDuration(int seconds) {
+    return seconds >= kMinRestDurationMinutes * 60 &&
+        seconds <= kMaxRestDurationMinutes * 60;
+  }
+
+  int _sanitizeFocusDurationOrDefault(int seconds, int fallback) {
+    return _isValidFocusDuration(seconds) ? seconds : fallback;
+  }
+
+  int _sanitizeRestDurationOrDefault(int seconds, int fallback) {
+    return _isValidRestDuration(seconds) ? seconds : fallback;
+  }
+
 
   int _sanitizeRemainingSeconds({
     required int seconds,
     required int phaseDurationSeconds,
     required int fallback,
   }) {
-    if (!_isValidDuration(seconds)) {
+    if (seconds <= 0) {
       return fallback;
     }
     if (seconds > phaseDurationSeconds) {
@@ -1913,7 +1947,7 @@ class AppController extends ChangeNotifier {
     if (count == null) {
       return null;
     }
-    if (count <= 0) {
+    if (count <= 0 || count > kMaxPomodoroCycleCount) {
       return null;
     }
     return count;

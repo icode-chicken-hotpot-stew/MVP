@@ -302,6 +302,7 @@ class AppController extends ChangeNotifier {
   bool _stage3mSent = false;
   bool _stage6mSent = false;
   bool _musicPausedForLifecycle = false;
+  int? _userPausedTrackIndex;
   _UiSfxType? _lastUiSfxType;
   DateTime? _lastUiSfxTriggeredAt;
   bool _isInForeground = true;
@@ -875,20 +876,32 @@ class AppController extends ChangeNotifier {
     if (isMusicPlaying.value) {
       isMusicPlaying.value = false;
       musicAutoPlayEnabled.value = false;
+      _userPausedTrackIndex = currentTrackIndex.value;
       await _audioService.pauseBgm();
       await _persistMusicState();
       return;
     }
 
     musicAutoPlayEnabled.value = true;
-    final bool started = await _playBgmForCurrentState();
+    final bool canResumePausedTrack =
+        _userPausedTrackIndex != null &&
+        _userPausedTrackIndex == currentTrackIndex.value;
+    final bool started = canResumePausedTrack
+        ? await _audioService.resumeBgm(volume: musicVolume.value)
+        : await _playBgmForCurrentState();
     isMusicPlaying.value = started;
+    if (started) {
+      _userPausedTrackIndex = null;
+    }
     await _persistMusicState();
   }
 
   Future<void> playNextTrack() async {
     final int trackCount = max(1, _audioService.trackCount);
     currentTrackIndex.value = (currentTrackIndex.value + 1) % trackCount;
+    if (!isMusicPlaying.value) {
+      _userPausedTrackIndex = null;
+    }
     await _persistMusicState();
     if (isMusicPlaying.value || musicAutoPlayEnabled.value) {
       final bool started = await _playBgmForCurrentState();
@@ -901,6 +914,9 @@ class AppController extends ChangeNotifier {
     final int trackCount = max(1, _audioService.trackCount);
     currentTrackIndex.value =
         (currentTrackIndex.value - 1 + trackCount) % trackCount;
+    if (!isMusicPlaying.value) {
+      _userPausedTrackIndex = null;
+    }
     await _persistMusicState();
     if (isMusicPlaying.value || musicAutoPlayEnabled.value) {
       final bool started = await _playBgmForCurrentState();
@@ -918,13 +934,7 @@ class AppController extends ChangeNotifier {
     final double sanitized = volume.clamp(0.0, 1.0);
     musicVolume.value = sanitized;
     await _persistMusicState();
-    if (isMusicPlaying.value || musicAutoPlayEnabled.value) {
-      final bool started = await _playBgmForCurrentState();
-      if (isMusicPlaying.value) {
-        isMusicPlaying.value = started;
-        await _persistMusicState();
-      }
-    }
+    await _audioService.setBgmVolume(sanitized);
   }
 
   Future<void> triggerUiOpenSfx() async {

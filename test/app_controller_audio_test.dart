@@ -42,7 +42,24 @@ void main() {
       await controller.playOrPauseMusic();
       expect(controller.isMusicPlaying.value, isTrue);
       expect(controller.musicAutoPlayEnabled.value, isTrue);
-      expect(audio.playBgmCalls, greaterThanOrEqualTo(2));
+      expect(audio.resumeBgmCalls, 1);
+      expect(audio.playBgmCalls, 1);
+    });
+
+    test('plays selected track when track changed while paused', () async {
+      await controller.playOrPauseMusic();
+      expect(controller.isMusicPlaying.value, isFalse);
+
+      await controller.playNextTrack();
+      final int selectedTrackIndex = controller.currentTrackIndex.value;
+      final int playCallsBeforeResume = audio.playBgmCalls;
+
+      await controller.playOrPauseMusic();
+
+      expect(controller.isMusicPlaying.value, isTrue);
+      expect(audio.resumeBgmCalls, 0);
+      expect(audio.playBgmCalls, playCallsBeforeResume + 1);
+      expect(audio.lastTrackIndex, selectedTrackIndex);
     });
 
     test('pauses on background and resumes on foreground', () async {
@@ -74,6 +91,16 @@ void main() {
 
       expect(audio.resumeBgmCalls, 1);
       expect(controller.isMusicPlaying.value, isFalse);
+    });
+
+    test('changing music volume does not restart current track', () async {
+      final int initialPlayCalls = audio.playBgmCalls;
+
+      await controller.setMusicVolume(0.35);
+
+      expect(controller.musicVolume.value, closeTo(0.35, 0.0001));
+      expect(audio.setBgmVolumeCalls, 1);
+      expect(audio.playBgmCalls, initialPlayCalls);
     });
 
     test('triggers start sfx on first start', () {
@@ -123,7 +150,7 @@ void main() {
     });
 
     test('audio failure does not block timer transition methods', () async {
-      audio.playBgmResult = false;
+      audio.resumeBgmResult = false;
       await controller.playOrPauseMusic();
       await controller.playOrPauseMusic();
 

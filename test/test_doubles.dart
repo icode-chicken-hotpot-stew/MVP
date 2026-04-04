@@ -46,6 +46,7 @@ class FakeAudioService implements AudioService {
 
   int initializeCalls = 0;
   int playBgmCalls = 0;
+  int setBgmVolumeCalls = 0;
   int pauseBgmCalls = 0;
   int resumeBgmCalls = 0;
   int stopBgmCalls = 0;
@@ -78,6 +79,12 @@ class FakeAudioService implements AudioService {
     lastTrackIndex = trackIndex;
     lastVolume = volume;
     return playBgmResult;
+  }
+
+  @override
+  Future<void> setBgmVolume(double volume) async {
+    setBgmVolumeCalls += 1;
+    lastVolume = volume;
   }
 
   @override

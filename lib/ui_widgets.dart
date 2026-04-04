@@ -135,6 +135,13 @@ class _UIWidgetsState extends State<UIWidgets> {
     return '$totalHours:$minutesText:$secondsText';
   }
 
+  String _formatStudyDurationFromXp(int xp) {
+    final int minutes = xp < 0 ? 0 : xp ~/ 10;
+    final int hours = minutes ~/ 60;
+    final int remainingMinutes = minutes % 60;
+    return '${hours}时${remainingMinutes}分';
+  }
+
   void _savePomodoroConfig() {
     if (_isTimerRunning) {
       _closePomodoroConfig();
@@ -959,10 +966,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                             valueListenable: widget.controller.dailyXp,
                             builder: (context, dailyXp, _) {
                               return Text(
-                                '今日学习时长：$dailyXp',
+                                '今日学习时长 ： ${_formatStudyDurationFromXp(dailyXp)}',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.85),
-                                  fontSize: 19,
+                                  fontSize: 18,
                                   fontFamily: 'ZhuoKai',
                                   shadows: const [
                                     BoxShadow(
@@ -979,10 +986,10 @@ class _UIWidgetsState extends State<UIWidgets> {
                             valueListenable: widget.controller.totalXp,
                             builder: (context, totalXp, _) {
                               return Text(
-                                '累计学习时长：$totalXp',
+                                '累计学习时长 ： ${_formatStudyDurationFromXp(totalXp)}',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.85),
-                                  fontSize: 19,
+                                  fontSize: 16,
                                   fontFamily: 'ZhuoKai',
                                   shadows: const [
                                     BoxShadow(

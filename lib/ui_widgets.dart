@@ -1,10 +1,16 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 
 import 'app_controller.dart';
 import 'character_view.dart';
 
+/// UIWidgets 负责应用主界面的可视化和交互：
+/// - 番茄钟控制卡片、时间进度条、开始/暂停/重置按钮；
+/// - 设置面板支持专注/休息/循环加减调整；
+/// - XP/等级信息显示与“鸡公煲队”团队 logo；
+/// - 桌面角色/对话气泡等视觉组件组合。
 class UIWidgets extends StatefulWidget {
   final AppController controller;
   const UIWidgets({super.key, required this.controller});
@@ -25,6 +31,8 @@ class _UIWidgetsState extends State<UIWidgets> {
   bool _isExpScaling = false;
   bool _isStatsScaling = false;
 
+  bool _isVolumePanelOpen = false; // 音量栏开关
+  bool _isInteractingWithVolume = false; // 滑动音量时避免全局 onTap 关闭面板
   bool _isPomodoroConfigOpen = false;
   final TextEditingController _focusMinutesController = TextEditingController();
   final TextEditingController _restMinutesController = TextEditingController();
@@ -41,7 +49,7 @@ class _UIWidgetsState extends State<UIWidgets> {
     super.dispose();
   }
 
-  double get _currentProgress {
+  double get _elapsedProgress {
     final int total = widget.controller.currentPhaseDurationSeconds;
     if (total <= 0) {
       return 0;
@@ -134,22 +142,117 @@ class _UIWidgetsState extends State<UIWidgets> {
       return;
     }
 
-    final int? focusValue = int.tryParse(_focusMinutesController.text);
-    final int? restValue = int.tryParse(_restMinutesController.text);
-    final int? cycleValue = int.tryParse(_cycleCountController.text);
-
-    if (focusValue != null && focusValue > 0) {
-      widget.controller.updateFocusDuration(focusValue * 60);
-    }
-    if (restValue != null && restValue > 0) {
-      widget.controller.updateRestDuration(restValue * 60);
-    }
-
-    widget.controller.updateCycleCount(
-      cycleValue == null || cycleValue <= 0 ? null : cycleValue,
-    );
-
+    // 由于按钮即时生效，保存即关闭配置面板。
     _closePomodoroConfig();
+  }
+
+  void _changeFocusMinutes(int delta) {
+    final int current = widget.controller.focusDurationSeconds.value ~/ 60;
+    final int updated = max(1, current + delta);
+    widget.controller.updateFocusDuration(updated * 60);
+    _focusMinutesController.text = updated.toString();
+  }
+
+  void _changeRestMinutes(int delta) {
+    final int current = widget.controller.restDurationSeconds.value ~/ 60;
+    final int updated = max(1, current + delta);
+    widget.controller.updateRestDuration(updated * 60);
+    _restMinutesController.text = updated.toString();
+  }
+
+  void _changeCycleCount(int delta) {
+    final int current = widget.controller.cycleCount.value ?? 0;
+    final int updated = max(0, current + delta);
+    widget.controller.updateCycleCount(updated == 0 ? null : updated);
+    _cycleCountController.text = updated.toString();
+  }
+
+  Widget _buildAdjustRow({
+    required String label,
+    required int value,
+    required VoidCallback onIncrease,
+    required VoidCallback onDecrease,
+    required VoidCallback onSuperIncrease,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFFFF),
+        border: Border.all(color: const Color(0xFFBCAAA4)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFF5D4037),
+                fontFamily: 'ZCOOLKuaiLe-Regular',
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            width: 40,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1E2D8),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: const Color(0xFFBCAAA4)),
+            ),
+            child: Text(
+              '$value',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF5D4037),
+                fontFamily: 'ZCOOLKuaiLe-Regular',
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: IconButton(
+              onPressed: onDecrease,
+              icon: const Icon(Icons.remove, size: 16),
+              color: const Color(0xFF6D4C41),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: IconButton(
+              onPressed: onIncrease,
+              icon: const Icon(Icons.add, size: 16),
+              color: const Color(0xFF6D4C41),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: IconButton(
+              onPressed: onSuperIncrease,
+              icon: const Icon(Icons.keyboard_double_arrow_up, size: 16),
+              color: const Color(0xFF6D4C41),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _restorePomodoroDefaults() {
@@ -175,6 +278,8 @@ class _UIWidgetsState extends State<UIWidgets> {
       _isStatsExpanded = false;
       _isExpExpanded = false;
       _isPomodoroConfigOpen = false;
+      _isVolumePanelOpen = false;
+      _isInteractingWithVolume = false;
     });
     if (hasOpenPanels) {
       unawaited(widget.controller.triggerUiBackSfx());
@@ -182,6 +287,10 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 
   void _handleBlankTap() {
+    if (_isInteractingWithVolume) {
+      return;
+    }
+
     _closeAllPanels();
 
     if (widget.controller.isTalking) {
@@ -249,22 +358,29 @@ class _UIWidgetsState extends State<UIWidgets> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: GestureDetector(
-        onTap: _handleBlankTap,
-        behavior: HitTestBehavior.deferToChild,
-        child: Stack(
-          children: [
-            Positioned.fill(child: _buildStageBackground()),
-            Positioned.fill(child: _buildCharacterStage(context)),
-            Positioned.fill(child: _buildStageForeground()),
-            Positioned(bottom: 120, right: 40, child: _buildDialogueBubble()),
-            Positioned(top: 10, left: 20, child: _buildTomatoTimerDrop()),
-            Positioned(top: 20, left: 50, child: _buildExpBarDrop()),
-            Positioned(top: 15, right: 28, child: _buildBlackboardStatsDrop()),
-            Positioned(bottom: 10, left: 15, child: _buildRecordPlayer()),
-          ],
+    return DefaultTextStyle(
+      style: const TextStyle(fontFamily: 'ZCOOLKuaiLe-Regular'),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: GestureDetector(
+          onTap: _handleBlankTap,
+          behavior: HitTestBehavior.deferToChild,
+          child: Stack(
+            children: [
+              Positioned.fill(child: _buildStageBackground()),
+              Positioned.fill(child: _buildCharacterStage(context)),
+              Positioned.fill(child: _buildStageForeground()),
+              Positioned(bottom: 120, right: 20, child: _buildDialogueBubble()),
+              Positioned(top: 15, left: 20, child: _buildTomatoTimerDrop()),
+              Positioned(top: 20, left: 50, child: _buildExpBarDrop()),
+              Positioned(
+                top: 15,
+                right: 28,
+                child: _buildBlackboardStatsDrop(),
+              ),
+              Positioned(bottom: 10, left: 15, child: _buildRecordPlayer()),
+            ],
+          ),
         ),
       ),
     );
@@ -344,21 +460,43 @@ class _UIWidgetsState extends State<UIWidgets> {
                     Stack(
                       alignment: Alignment.center,
                       children: [
-                        ValueListenableBuilder<int>(
-                          valueListenable: widget.controller.remainingSeconds,
-                          builder: (context, _, _) {
+                        ListenableBuilder(
+                          listenable: Listenable.merge([
+                            widget.controller.remainingSeconds,
+                            widget.controller.pomodoroState,
+                            widget.controller.phaseStatus,
+                          ]),
+                          builder: (context, _) {
+                            final PomodoroState state =
+                                widget.controller.pomodoroState.value;
+
+                            // 点击展开时如果处于 ready（未开始），按产品期望显示为专注模式（红色）。
+                            final bool isStudying =
+                                state == PomodoroState.studying ||
+                                widget.controller.phaseStatus.value ==
+                                    PomodoroPhaseStatus.ready;
+
+                            // 环形条采用“已流逝=浅色、剩余=深色”视觉语义：
+                            // 已流逝部分会沿顺时针逐步增大，从而呈现深色圈被持续消耗。
+                            final double progressValue = _elapsedProgress.clamp(
+                              0.0,
+                              1.0,
+                            );
+
+                            final Color progressColor = isStudying
+                                ? Colors.red.shade100
+                                : Colors.green.shade100;
+                            final Color backgroundColor = isStudying
+                                ? Colors.red.shade700
+                                : Colors.green.shade700;
+
                             return SizedBox(
                               width: 70,
                               height: 70,
                               child: CircularProgressIndicator(
-                                value: _currentProgress,
-                                color: const Color.fromARGB(255, 204, 196, 195),
-                                backgroundColor: const Color.fromARGB(
-                                  255,
-                                  179,
-                                  22,
-                                  22,
-                                ),
+                                value: progressValue.clamp(0.0, 1.0),
+                                color: progressColor,
+                                backgroundColor: backgroundColor,
                                 strokeWidth: 6,
                               ),
                             );
@@ -426,8 +564,8 @@ class _UIWidgetsState extends State<UIWidgets> {
           ],
         ),
         Positioned(
-          top: 55,
-          left: 190,
+          top: 10,
+          left: 175,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {},
@@ -435,8 +573,8 @@ class _UIWidgetsState extends State<UIWidgets> {
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOut,
               alignment: Alignment.topLeft,
-              height: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 240 : 0,
-              width: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 170 : 0,
+              height: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 265 : 0,
+              width: (_isTomatoExpanded && _isPomodoroConfigOpen) ? 200 : 0,
               clipBehavior: Clip.hardEdge,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.96),
@@ -453,7 +591,6 @@ class _UIWidgetsState extends State<UIWidgets> {
               child: Material(
                 color: Colors.transparent,
                 child: SingleChildScrollView(
-                  physics: const NeverScrollableScrollPhysics(),
                   child: Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: Column(
@@ -479,54 +616,55 @@ class _UIWidgetsState extends State<UIWidgets> {
                                       ),
                                     ),
                                     const SizedBox(height: 4),
-                                    TextField(
-                                      controller: _focusMinutesController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: const InputDecoration(
-                                        isDense: true,
-                                        contentPadding: EdgeInsets.symmetric(
-                                          vertical: 6,
-                                          horizontal: 8,
-                                        ),
-                                        labelText: '专注(分)',
-                                        floatingLabelBehavior:
-                                            FloatingLabelBehavior.always,
-                                        border: OutlineInputBorder(),
-                                      ),
+                                    ValueListenableBuilder<int>(
+                                      valueListenable: widget
+                                          .controller
+                                          .focusDurationSeconds,
+                                      builder: (context, value, _) =>
+                                          _buildAdjustRow(
+                                            label: '专注(分)',
+                                            value: value ~/ 60,
+                                            onIncrease: () =>
+                                                _changeFocusMinutes(1),
+                                            onDecrease: () =>
+                                                _changeFocusMinutes(-1),
+                                            onSuperIncrease: () =>
+                                                _changeFocusMinutes(10),
+                                          ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    TextField(
-                                      controller: _restMinutesController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: const InputDecoration(
-                                        isDense: true,
-                                        contentPadding: EdgeInsets.symmetric(
-                                          vertical: 6,
-                                          horizontal: 8,
-                                        ),
-                                        labelText: '休息(分)',
-                                        floatingLabelBehavior:
-                                            FloatingLabelBehavior.always,
-                                        border: OutlineInputBorder(),
-                                      ),
+                                    const SizedBox(height: 3),
+                                    ValueListenableBuilder<int>(
+                                      valueListenable:
+                                          widget.controller.restDurationSeconds,
+                                      builder: (context, value, _) =>
+                                          _buildAdjustRow(
+                                            label: '休息(分)',
+                                            value: value ~/ 60,
+                                            onIncrease: () =>
+                                                _changeRestMinutes(1),
+                                            onDecrease: () =>
+                                                _changeRestMinutes(-1),
+                                            onSuperIncrease: () =>
+                                                _changeRestMinutes(10),
+                                          ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    TextField(
-                                      controller: _cycleCountController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: const InputDecoration(
-                                        isDense: true,
-                                        contentPadding: EdgeInsets.symmetric(
-                                          vertical: 6,
-                                          horizontal: 8,
-                                        ),
-                                        labelText: '循环(次)',
-                                        floatingLabelBehavior:
-                                            FloatingLabelBehavior.always,
-                                        border: OutlineInputBorder(),
-                                      ),
+                                    const SizedBox(height: 3),
+                                    ValueListenableBuilder<int?>(
+                                      valueListenable:
+                                          widget.controller.cycleCount,
+                                      builder: (context, value, _) =>
+                                          _buildAdjustRow(
+                                            label: '循环(次)',
+                                            value: value ?? 0,
+                                            onIncrease: () =>
+                                                _changeCycleCount(1),
+                                            onDecrease: () =>
+                                                _changeCycleCount(-1),
+                                            onSuperIncrease: () =>
+                                                _changeCycleCount(10),
+                                          ),
                                     ),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 1),
                                     Align(
                                       alignment: Alignment.centerLeft,
                                       child: TextButton(
@@ -622,8 +760,8 @@ class _UIWidgetsState extends State<UIWidgets> {
             scale: _isExpScaling ? 0.9 : 1.0,
             duration: const Duration(milliseconds: 150),
             child: Container(
-              width: 100,
-              height: 35,
+              width: 120,
+              height: 42,
               decoration: const BoxDecoration(
                 image: DecorationImage(
                   image: AssetImage('assets/images/scroll_rolled.png'),
@@ -637,7 +775,7 @@ class _UIWidgetsState extends State<UIWidgets> {
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
           height: _isExpExpanded ? 160 : 0,
-          width: 140,
+          width: 180,
           margin: const EdgeInsets.only(top: 8),
           clipBehavior: Clip.hardEdge,
           decoration: BoxDecoration(
@@ -670,7 +808,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                     valueListenable: widget.controller.level,
                     builder: (context, level, _) {
                       return Text(
-                        'Lv. $level 学徒',
+                        '【 Lv. $level 】\n${widget.controller.xpToNextLevel} XP',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.brown[900],
@@ -739,8 +877,8 @@ class _UIWidgetsState extends State<UIWidgets> {
             scale: _isStatsScaling ? 0.9 : 1.0,
             duration: const Duration(milliseconds: 150),
             child: Container(
-              width: 50,
-              height: 50,
+              width: 64,
+              height: 64,
               decoration: const BoxDecoration(
                 image: DecorationImage(
                   image: AssetImage('assets/images/board_btn.png'),
@@ -774,6 +912,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                 width: 320,
                 child: Stack(
                   children: [
+                    //（水印已移除）
                     Padding(
                       padding: const EdgeInsets.only(
                         left: 50.0,
@@ -788,7 +927,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                             valueListenable: widget.controller.dailyXp,
                             builder: (context, dailyXp, _) {
                               return Text(
-                                '今日 XP：$dailyXp',
+                                '今日学习时长：$dailyXp',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.85),
                                   fontSize: 19,
@@ -808,7 +947,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                             valueListenable: widget.controller.totalXp,
                             builder: (context, totalXp, _) {
                               return Text(
-                                '累计 XP：$totalXp',
+                                '累计学习时长：$totalXp',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.85),
                                   fontSize: 19,
@@ -832,16 +971,16 @@ class _UIWidgetsState extends State<UIWidgets> {
                       child: GestureDetector(
                         onTap: () {
                           widget.controller.registerUserInteraction();
-                          _showShareCard(context, widget.controller);
+                          _showAboutUsDialog(context, widget.controller);
                         },
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              '分享',
+                              '关于我们',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.9),
-                                fontSize: 15,
+                                fontSize: 12,
                                 fontFamily: 'ZhuoKai',
                                 shadows: const [
                                   BoxShadow(
@@ -853,8 +992,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                             ),
                             const SizedBox(height: 4),
                             Container(
-                              width: 55,
-                              height: 35,
+                              width: 64,
+                              height: 44,
                               decoration: const BoxDecoration(
                                 image: DecorationImage(
                                   image: AssetImage(
@@ -868,6 +1007,7 @@ class _UIWidgetsState extends State<UIWidgets> {
                         ),
                       ),
                     ),
+                    //（小字水印已移除）
                   ],
                 ),
               ),
@@ -882,88 +1022,201 @@ class _UIWidgetsState extends State<UIWidgets> {
     return ValueListenableBuilder<bool>(
       valueListenable: widget.controller.isMusicPlaying,
       builder: (context, isMusicPlaying, _) {
-        return Container(
+        return SizedBox(
           width: 240,
-          height: 60,
-          decoration: BoxDecoration(
-            image: const DecorationImage(
-              image: AssetImage('assets/images/record_bg.png'),
-              fit: BoxFit.fill,
-            ),
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black54,
-                blurRadius: 10,
-                offset: Offset(0, 5),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          height: _isVolumePanelOpen ? 260 : 60,
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              const SizedBox(width: 12),
-              Image.asset(
-                'assets/images/record_disk.png',
-                width: 40,
-                height: 40,
-                fit: BoxFit.contain,
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () {
-                  widget.controller.registerUserInteraction();
-                  unawaited(widget.controller.playPreviousTrack());
-                },
-                child: Image.asset(
-                  'assets/images/btn_prev.png',
-                  width: 30,
-                  height: 30,
-                  fit: BoxFit.contain,
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  width: 240,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    image: const DecorationImage(
+                      image: AssetImage('assets/images/record_bg.png'),
+                      fit: BoxFit.fill,
+                    ),
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black54,
+                        blurRadius: 10,
+                        offset: Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(width: 12),
+                      Image.asset(
+                        'assets/images/record_disk.png',
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                          widget.controller.registerUserInteraction();
+                          unawaited(widget.controller.playPreviousTrack());
+                        },
+                        child: Image.asset(
+                          'assets/images/btn_prev.png',
+                          width: 30,
+                          height: 30,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () {
+                          widget.controller.registerUserInteraction();
+                          unawaited(widget.controller.playOrPauseMusic());
+                        },
+                        child: Image.asset(
+                          isMusicPlaying
+                              ? 'assets/images/btn_pause.png'
+                              : 'assets/images/btn_play.png',
+                          width: 45,
+                          height: 45,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () {
+                          widget.controller.registerUserInteraction();
+                          unawaited(widget.controller.playNextTrack());
+                        },
+                        child: Image.asset(
+                          'assets/images/btn_next.png',
+                          width: 30,
+                          height: 30,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                          widget.controller.registerUserInteraction();
+                          setState(() {
+                            _isVolumePanelOpen = !_isVolumePanelOpen;
+                          });
+                        },
+                        child: Image.asset(
+                          'assets/images/btn_music.png',
+                          width: 26,
+                          height: 26,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () {
-                  widget.controller.registerUserInteraction();
-                  unawaited(widget.controller.playOrPauseMusic());
-                },
-                child: Image.asset(
-                  isMusicPlaying
-                      ? 'assets/images/btn_pause.png'
-                      : 'assets/images/btn_play.png',
-                  width: 45,
-                  height: 45,
-                  fit: BoxFit.contain,
+
+              if (_isVolumePanelOpen)
+                Positioned(
+                  bottom: 70,
+                  right: 12,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Container(
+                      width: 56,
+                      height: 190,
+                      padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.15),
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black45,
+                            blurRadius: 8,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ValueListenableBuilder<double>(
+                        valueListenable: widget.controller.musicVolume,
+                        builder: (context, volume, _) {
+                          return Column(
+                            mainAxisSize: MainAxisSize.max,
+                            children: [
+                              const Text(
+                                '+',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Expanded(
+                                child: RotatedBox(
+                                  quarterTurns: 3,
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      trackHeight: 8,
+                                      thumbShape: const RoundSliderThumbShape(
+                                        enabledThumbRadius: 9,
+                                      ),
+                                      overlayShape:
+                                          const RoundSliderOverlayShape(
+                                            overlayRadius: 14,
+                                          ),
+                                    ),
+                                    child: Slider(
+                                      value: volume,
+                                      min: 0,
+                                      max: 1,
+                                      activeColor: Colors.black,
+                                      inactiveColor: Colors.black26,
+                                      onChangeStart: (v) {
+                                        setState(() {
+                                          _isInteractingWithVolume = true;
+                                        });
+                                      },
+                                      onChangeEnd: (v) {
+                                        setState(() {
+                                          _isInteractingWithVolume = false;
+                                        });
+                                      },
+                                      onChanged: (newValue) {
+                                        unawaited(
+                                          widget.controller.setMusicVolume(
+                                            newValue,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              const Text(
+                                '-',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () {
-                  widget.controller.registerUserInteraction();
-                  unawaited(widget.controller.playNextTrack());
-                },
-                child: Image.asset(
-                  'assets/images/btn_next.png',
-                  width: 30,
-                  height: 30,
-                  fit: BoxFit.contain,
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () {
-                  widget.controller.registerUserInteraction();
-                  unawaited(widget.controller.toggleMuteMusic());
-                },
-                child: Image.asset(
-                  'assets/images/btn_music.png',
-                  width: 30,
-                  height: 30,
-                  fit: BoxFit.contain,
-                ),
-              ),
-              const SizedBox(width: 12),
             ],
           ),
         );
@@ -972,37 +1225,155 @@ class _UIWidgetsState extends State<UIWidgets> {
   }
 }
 
-void _showShareCard(BuildContext context, AppController controller) {
+void _showAboutUsDialog(
+  BuildContext context,
+  AppController controller, [
+  String aboutText = '''
+鸡公煲队正式入驻！
+我们是一个由四位开发者组成的独立团队。
+
+感谢你拨冗体验我们的作品，
+由 4 人团队历时 60 天精心慢炖而成,
+你的支持是我们不断迭代的动力。
+--------------------------------
+制作团队：
+主厨：陈柏森 Paschen
+摆盘专家：刘思源 Stella
+汤底架构师：姚博闻 YewFence
+灵魂调味师：陈逸宇 Xiaoyukuki
+--------------------------------
+“加辣、加汤、不加 Bug！”''',
+]) {
   unawaited(controller.triggerUiOpenSfx());
-  final int seconds = controller.remainingSeconds.value;
-  final double hours = (25 * 60 - seconds) / 3600.0;
   showDialog(
     context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.55),
     builder: (ctx) => AlertDialog(
-      backgroundColor: const Color(0xFFF4E8C1),
-      title: const Text('今日复古专注打卡'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '今日学习：${hours.toStringAsFixed(2)} 小时',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            '（此处为分享卡片占位）',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-        ],
+      backgroundColor: const Color(0xFFF7E9C6),
+      elevation: 18,
+      shadowColor: const Color(0x7F3D2A1A),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: Color(0xFFC89961), width: 1.2),
       ),
+      contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      content: SizedBox(
+        width: 288,
+        child: SingleChildScrollView(
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFFFF7E4), Color(0xFFF1E0BC)],
+              ),
+              border: Border.all(color: const Color(0xFFDAB98D)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33A56D3F),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 圆形 logo（硬裁切）：请把图片放在 assets/images/about_logo.png
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFFFE7B0), Color(0xFFD39A59)],
+                    ),
+                  ),
+                  child: const CircleAvatar(
+                    radius: 28,
+                    backgroundImage: AssetImage('assets/images/about_logo.png'),
+                    backgroundColor: Colors.transparent,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '鸡公煲队\nRooster Stewdio',
+                  style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: Color(0xFF4A2A13),
+                    fontFamily: 'ZCOOLKuaiLe-Regular',
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 122,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0x00B07D49),
+                        Color(0xFFB07D49),
+                        Color(0x00B07D49),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.44),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFD1AF84)),
+                  ),
+                  child: Text(
+                    aboutText,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: Color(0xFF4A2A13),
+                      fontFamily: 'ZhuoKai',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       actions: [
         TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF4A2A13),
+            backgroundColor: const Color(0xFFE8CEA0),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: const BorderSide(color: Color(0xFFC5914E)),
+            ),
+          ),
           onPressed: () {
             controller.registerUserInteraction();
             unawaited(controller.triggerUiBackSfx());
             Navigator.of(ctx).pop();
           },
-          child: const Text('收下', style: TextStyle(color: Colors.brown)),
+          child: const Text(
+            'CLOSE',
+            style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.8),
+          ),
         ),
       ],
     ),
@@ -1044,11 +1415,6 @@ class _ChatBubbleState extends State<ChatBubble> {
 
     _cancelAutoNextTimer();
     widget.onNext();
-  }
-
-  void _handleSkipTap() {
-    _cancelAutoNextTimer();
-    widget.onSkip();
   }
 
   @override
@@ -1120,6 +1486,41 @@ class _ChatBubbleState extends State<ChatBubble> {
     });
   }
 
+  void _fastForwardSentence() {
+    // 找到从当前 _charIndex 开始的本句结束位置（以常见中文/英文句号或问号为界）
+    if (_charIndex >= widget.text.length) {
+      return;
+    }
+    final String rest = widget.text.substring(_charIndex);
+    final RegExp sentenceEnd = RegExp(r'[。！？!?\.]');
+    final Match? m = sentenceEnd.firstMatch(rest);
+    int targetIndex;
+    if (m != null) {
+      targetIndex = _charIndex + m.end; // 包含标点
+    } else {
+      targetIndex = widget.text.length; // 没有标点则直接到句尾
+    }
+
+    setState(() {
+      _charIndex = targetIndex.clamp(0, widget.text.length);
+      _displayedText = widget.text.substring(0, _charIndex);
+    });
+    // 如果还在计时器中，继续保留定时器使后续句子仍以打字效果出现
+    // 但如果已经到末尾则取消
+    if (_charIndex >= widget.text.length) {
+      _timer?.cancel();
+    }
+  }
+
+  void _fastForwardOrSkip() {
+    // 若仍在逐字显示，则先按“到本句末尾”处理；若已全部显示，则调用外部跳过行为
+    if (_charIndex < widget.text.length) {
+      _fastForwardSentence();
+      return;
+    }
+    widget.onSkip();
+  }
+
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
@@ -1137,7 +1538,7 @@ class _ChatBubbleState extends State<ChatBubble> {
         behavior: HitTestBehavior.opaque,
         onTap: _handleBubbleTap,
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 240, minHeight: 60),
+          constraints: const BoxConstraints(maxWidth: 200, minHeight: 80),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: const Color(0xFFFFFDF8),
@@ -1170,9 +1571,9 @@ class _ChatBubbleState extends State<ChatBubble> {
               ),
               Positioned(
                 bottom: -5,
-                right: -5,
+                right: 0,
                 child: GestureDetector(
-                  onTap: _handleSkipTap,
+                  onTap: _fastForwardOrSkip,
                   child: const Icon(
                     Icons.fast_forward_rounded,
                     size: 20,

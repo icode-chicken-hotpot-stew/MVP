@@ -34,19 +34,30 @@ void main() {
       controller.dispose();
     });
 
-    test('requests notification permission on initialize', () {
+    test('requests notification permission only on first launch', () async {
+      await controller.requestNotificationPermissionOnFirstLaunch();
       expect(notifications.permissionRequestCalls, 1);
+
+      final AppController nextLaunchController = buildController();
+      await nextLaunchController.initialize();
+      await nextLaunchController.requestNotificationPermissionOnFirstLaunch();
+
+      expect(notifications.permissionRequestCalls, 1);
+      nextLaunchController.dispose();
     });
 
-    test('schedules once when app backgrounds during studying + running', () async {
-      controller.startTimer();
+    test(
+      'schedules once when app backgrounds during studying + running',
+      () async {
+        controller.startTimer();
 
-      await controller.handleLifecycleStateChanged(AppLifecycleState.paused);
-      await controller.handleLifecycleStateChanged(AppLifecycleState.hidden);
+        await controller.handleLifecycleStateChanged(AppLifecycleState.paused);
+        await controller.handleLifecycleStateChanged(AppLifecycleState.hidden);
 
-      expect(notifications.scheduleCalls, 1);
-      expect(notifications.lastBackgroundedAt, fakeNow);
-    });
+        expect(notifications.scheduleCalls, 1);
+        expect(notifications.lastBackgroundedAt, fakeNow);
+      },
+    );
 
     test('does not schedule outside active focus', () async {
       await controller.handleLifecycleStateChanged(AppLifecycleState.paused);

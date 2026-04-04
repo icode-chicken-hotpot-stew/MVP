@@ -21,6 +21,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.11.0
 
 flutter:
   uses-material-design: true
@@ -46,3 +47,8 @@ flutter:
     - family: ZCOOLKuaiLe-Regular
       fonts:
         - asset: assets/fonts/ZCOOLKuaiLe-Regular.ttf
+
+flutter_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/app_icon.png"

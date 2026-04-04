@@ -27,6 +27,8 @@ const String _kSupervisorSessionIdKey = 'supervisor.sessionId';
 const String _kSupervisorLastBackgroundAtKey = 'supervisor.lastBackgroundAt';
 const String _kSupervisorStage3mSentKey = 'supervisor.stage3mSent';
 const String _kSupervisorStage6mSentKey = 'supervisor.stage6mSent';
+const String _kSupervisorPermissionPromptedKey =
+    'supervisor.permissionPrompted';
 const String _kDialogueAssetPath = 'assets/dialogues/dialogues.json';
 const List<String> _kDefaultDialogueFallback = <String>['先继续当前节奏吧。'];
 
@@ -306,6 +308,7 @@ class AppController extends ChangeNotifier {
   bool _hasTriggeredColdStartDialogue = false;
   Timer? _coldStartDialogueTimer;
   int _coldStartDialogueDelaySeconds;
+  bool _isRequestingNotificationPermission = false;
 
   bool _isTalking = false;
   String _currentDialogue = '';
@@ -343,11 +346,6 @@ class AppController extends ChangeNotifier {
 
     try {
       await _supervisorNotificationService.initialize();
-      final bool permissionGranted = await _supervisorNotificationService
-          .requestPermissionIfNeeded();
-      debugPrint(
-        '[AppController] Supervisor notification permission ready=$permissionGranted',
-      );
     } catch (error, stackTrace) {
       debugPrint(
         '[AppController] Failed to initialize notifications: $error\n$stackTrace',
@@ -412,6 +410,41 @@ class AppController extends ChangeNotifier {
 
     _resetIdleTimer();
     unawaited(_ensureDialoguesLoaded());
+  }
+
+  Future<void> requestNotificationPermissionOnFirstLaunch() async {
+    if (_isRequestingNotificationPermission) {
+      return;
+    }
+
+    _isRequestingNotificationPermission = true;
+    try {
+      _preferences ??= await SharedPreferences.getInstance();
+      final bool alreadyPrompted =
+          _preferences!.getBool(_kSupervisorPermissionPromptedKey) ?? false;
+      if (alreadyPrompted) {
+        debugPrint(
+          '[AppController] Skip notification permission prompt: already prompted before.',
+        );
+        return;
+      }
+
+      await _supervisorNotificationService.initialize();
+      final bool permissionGranted = await _supervisorNotificationService
+          .requestPermissionIfNeeded();
+      await _preferences!.setBool(_kSupervisorPermissionPromptedKey, true);
+      debugPrint(
+        '[AppController] First-launch notification permission prompt done. '
+        'permissionReady=$permissionGranted',
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[AppController] Failed to request first-launch notification permission: '
+        '$error\n$stackTrace',
+      );
+    } finally {
+      _isRequestingNotificationPermission = false;
+    }
   }
 
   void setColdStartDialogueDelaySeconds(int seconds) {

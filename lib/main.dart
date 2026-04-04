@@ -14,9 +14,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: MainStage(),
+      theme: ThemeData(fontFamily: 'ZCOOLKuaiLe-Regular'),
+      home: const MainStage(),
     );
   }
 }
@@ -38,6 +39,21 @@ class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     controller = AppController();
     _initialization = controller.initialize();
+    unawaited(_requestInitialNotificationPermission());
+  }
+
+  Future<void> _requestInitialNotificationPermission() async {
+    await _initialization;
+    if (!mounted) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(controller.requestNotificationPermissionOnFirstLaunch());
+    });
   }
 
   @override

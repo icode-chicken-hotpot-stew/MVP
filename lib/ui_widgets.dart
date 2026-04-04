@@ -370,7 +370,7 @@ class _UIWidgetsState extends State<UIWidgets> {
               Positioned.fill(child: _buildStageBackground()),
               Positioned.fill(child: _buildCharacterStage(context)),
               Positioned.fill(child: _buildStageForeground()),
-              Positioned(bottom: 120, right: 40, child: _buildDialogueBubble()),
+              Positioned(bottom: 120, right: 20, child: _buildDialogueBubble()),
               Positioned(top: 15, left: 20, child: _buildTomatoTimerDrop()),
               Positioned(top: 20, left: 50, child: _buildExpBarDrop()),
               Positioned(
@@ -1538,7 +1538,7 @@ class _ChatBubbleState extends State<ChatBubble> {
         behavior: HitTestBehavior.opaque,
         onTap: _handleBubbleTap,
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 240, minHeight: 60),
+          constraints: const BoxConstraints(maxWidth: 200, minHeight: 80),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: const Color(0xFFFFFDF8),
@@ -1571,7 +1571,7 @@ class _ChatBubbleState extends State<ChatBubble> {
               ),
               Positioned(
                 bottom: -5,
-                right: -5,
+                right: 0,
                 child: GestureDetector(
                   onTap: _fastForwardOrSkip,
                   child: const Icon(

@@ -4,7 +4,7 @@
 
 - 后台监管：消费 `pomodoroState + phaseStatus + lifecycle`
 - XP / 等级：消费专注阶段自然完成事件
-- 音乐 / 音效：消费应用初始化、生命周期变化与阶段切换事件
+- 音乐 / 音效：消费应用初始化、生命周期变化、阶段切换与 UI 打开/返回事件
 
 当前仓库中，这三条链路已经进入“代码落地 + 单测覆盖 + 文档补齐”状态；仍未完成的主要是音频资源实装与 Android 真机验收。
 
@@ -36,7 +36,7 @@
 |  Pomodoro Core                                       |
 |    |- phase state machine                            |
 |    |- snapshot persistence                           |
-|    |- focus/rest transitions                         |
+|    |- studying/resting transitions                   |
 |                                                      |
 |  Extension State                                     |
 |    |- XP / daily XP / level                          |
@@ -130,6 +130,7 @@
 - 应用初始化完成后，如果 `musicAutoPlayEnabled` 和 `isMusicPlaying` 为真，则自动播放 BGM。
 - 用户播放 / 暂停会覆盖自动播放意图，并持久化 `autoplay / isPlaying / track / volume`。
 - 应用切后台时，若当前处于自动播放链路，会暂停 BGM；回前台后尝试恢复。
+- SFX 采用语义事件映射，统一维护四类短音效：`study_start`、`study_end`、`button_open`、`button_back`。
 
 ### Current implementation choices
 
@@ -138,14 +139,22 @@
   - 一个负责循环 BGM
   - 一个负责短音效
 - 阶段音效规则：
-  - `ready -> studying/running`: 启动音效
-  - `studying/running -> resting/running`: 鼓励音效
-  - `resting/running -> studying/running`: 启动音效
+  - `ready -> studying/running`: 播放 `study_start`
+  - `studying/running -> resting/running`: 播放 `study_end`
+  - `resting/running -> studying/running`: 播放 `study_start`
+- 按钮音效规则（本次补充范围）：
+  - 触发“打开”语义动作时播放 `button_open`（如打开配置面板、展开面板、打开弹窗）
+  - 触发“返回”语义动作时播放 `button_back`（如取消、关闭、`Navigator.pop`）
+  - UI 不直接驱动底层音频播放器，仅触发 controller 语义方法
+- 防重复播放保护（新增）：
+  - controller 级：对 UI SFX 增加短窗口抑制（any-type cooldown + same-type dedup），拦截同次交互链路内的连发
+  - audio service 级：增加 SFX 启动并发锁、短冷却、同资源去重，并在每次新播放前 `stop` 上一次 SFX，降低底层重复 `baseStart` 概率
 
 ### Failure mode
 
 - 任意 BGM / SFX 播放失败都只记录日志，不阻塞 timer 状态推进。
 - 如果生命周期恢复 BGM 失败，controller 会把 `isMusicPlaying` 置为 false 并持久化，避免 UI 与实际状态继续偏离。
+- 若检测到短时间重复的 UI SFX 请求，系统会静默丢弃重复请求并输出调试日志，不影响主流程。
 
 ## UI Alignment
 
@@ -198,10 +207,15 @@
    - 手动暂停 / 恢复持久化意图
    - 前后台暂停 / 恢复
    - 恢复失败降级
-   - SFX 不阻塞 timer 迁移
+  - 阶段 SFX 不阻塞 timer 迁移
+  - 按钮打开/返回 SFX 触发与失败降级
+  - rapid repeated UI SFX（同类型/跨类型）去重回归
 
 ## Remaining Gaps
 
 1. Android 真机手工验证尚未完成，尤其是通知权限、前后台切换、真实音频播放链路。
-2. `assets/music/` 与 `assets/sfx/` 当前尚未看到实际资源文件，音频服务路径已固定，但仍需补齐资源并做真机验证。
-3. 历史统计 / 留存分析面板仍未实现，当前 change 的“retention”范围主要体现为后台回流提醒与成长反馈，不包含完整历史分析系统。
+2. 当前仓库已存在四类 SFX 资源并完成命名对齐：`study_start.mp3`、`study_end.mp3`、`button_open.mp3`、`button_back.mp3`；仍需真机验证实际播放链路。
+3. `pubspec.yaml` 已声明 `assets/sfx/`，仍需通过真机流程验证打包后资源加载与回放稳定性。
+4. 按钮打开 / 返回音效已统一通过 controller 语义入口触发，仍需在真机场景中补齐交互覆盖率验证。
+5. 当前防重复策略基于时间窗口与并发锁，已覆盖已知双响路径；不同设备音频栈仍需真机回归验证窗口参数是否需要微调。
+6. 历史统计 / 留存分析面板仍未实现，当前 change 的“retention”范围主要体现为后台回流提醒与成长反馈，不包含完整历史分析系统。

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mvp_app/services/audio_service.dart';
 import 'package:mvp_app/services/supervisor_notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 const int kDefaultPomodoroSeconds = 1500;
 const int kDefaultRestSeconds = 300;
 const int kDailyXpCap = 2000;
+const int kDefaultColdStartDialogueDelaySeconds = 5;
+const Duration kIdleDialogueTimeout = Duration(seconds: 60);
 
 const String _kPomodoroSnapshotKey = 'pomodoro.snapshot';
 const String _kXpTotalKey = 'xp.total';
@@ -24,6 +27,8 @@ const String _kSupervisorSessionIdKey = 'supervisor.sessionId';
 const String _kSupervisorLastBackgroundAtKey = 'supervisor.lastBackgroundAt';
 const String _kSupervisorStage3mSentKey = 'supervisor.stage3mSent';
 const String _kSupervisorStage6mSentKey = 'supervisor.stage6mSent';
+const String _kDialogueAssetPath = 'assets/dialogues/dialogues.json';
+const List<String> _kDefaultDialogueFallback = <String>['先继续当前节奏吧。'];
 
 const List<int> _kLevelThresholds = <int>[
   0,
@@ -39,9 +44,17 @@ const List<int> _kLevelThresholds = <int>[
 ];
 
 enum PomodoroState { resting, studying }
+
 enum PomodoroPhaseStatus { ready, running, paused }
 
 enum _PhaseSfxType { start, encouragement }
+
+enum _UiSfxType { open, back }
+
+enum _DialogueArbitration { interrupt, queue, ignore }
+
+const Duration _kUiSfxAnyTypeCooldown = Duration(milliseconds: 180);
+const Duration _kUiSfxSameTypeDedupWindow = Duration(milliseconds: 320);
 
 class _PomodoroSnapshot {
   const _PomodoroSnapshot({
@@ -109,10 +122,12 @@ class _PomodoroSnapshot {
         return null;
       }
 
-      final PomodoroState? pomodoroState = PomodoroState.values.cast<PomodoroState?>().firstWhere(
-        (PomodoroState? value) => value?.name == pomodoroStateName,
-        orElse: () => null,
-      );
+      final PomodoroState? pomodoroState = PomodoroState.values
+          .cast<PomodoroState?>()
+          .firstWhere(
+            (PomodoroState? value) => value?.name == pomodoroStateName,
+            orElse: () => null,
+          );
       final PomodoroPhaseStatus? phaseStatus = PomodoroPhaseStatus.values
           .cast<PomodoroPhaseStatus?>()
           .firstWhere(
@@ -127,7 +142,9 @@ class _PomodoroSnapshot {
       return _PomodoroSnapshot(
         pomodoroState: pomodoroState,
         phaseStatus: phaseStatus,
-        startedAt: startedAtRaw == null ? null : DateTime.tryParse(startedAtRaw)?.toLocal(),
+        startedAt: startedAtRaw == null
+            ? null
+            : DateTime.tryParse(startedAtRaw)?.toLocal(),
         phaseDurationSeconds: phaseDurationSeconds,
         remainingSeconds: remainingSeconds,
         focusDurationSeconds: focusDurationSeconds,
@@ -157,16 +174,14 @@ class _PhaseAdvanceResult {
   final bool exitedStudyingRunning;
 }
 
-/// AppController 是整个应用的状态中枢。
-///
-/// 负责：
-/// - 番茄钟运行状态（专注/休息、运行/暂停/就绪），
-/// - 时间同步与倒计时逻辑，
-/// - 专注时长与休息时长配置、循环次数，
-/// - XP 统计与升级逻辑，
-/// - 背景音乐与通知服务状态持久化，
-/// - 以及与 SharedPreferences 的持久化读写。
-class AppController {
+class _DialogueCandidate {
+  const _DialogueCandidate({required this.requiredLevel, required this.lines});
+
+  final int requiredLevel;
+  final List<String> lines;
+}
+
+class AppController extends ChangeNotifier {
   AppController({
     int initialSeconds = kDefaultPomodoroSeconds,
     bool initialActive = false,
@@ -175,12 +190,15 @@ class AppController {
     SupervisorNotificationService? supervisorNotificationService,
     AudioService? audioService,
     DateTime Function()? now,
+    int coldStartDialogueDelaySeconds = kDefaultColdStartDialogueDelaySeconds,
   }) : remainingSeconds = ValueNotifier<int>(initialSeconds),
        isActive = ValueNotifier<bool>(initialActive),
        isDrawerOpen = ValueNotifier<bool>(initialDrawerOpen),
        currentDate = ValueNotifier<String>(initialDate ?? _formatCurrentDate()),
        pomodoroState = ValueNotifier<PomodoroState>(PomodoroState.resting),
-       phaseStatus = ValueNotifier<PomodoroPhaseStatus>(PomodoroPhaseStatus.ready),
+       phaseStatus = ValueNotifier<PomodoroPhaseStatus>(
+         PomodoroPhaseStatus.ready,
+       ),
        focusDurationSeconds = ValueNotifier<int>(kDefaultPomodoroSeconds),
        restDurationSeconds = ValueNotifier<int>(kDefaultRestSeconds),
        cycleCount = ValueNotifier<int?>(null),
@@ -194,9 +212,59 @@ class AppController {
        currentTrackIndex = ValueNotifier<int>(0),
        musicVolume = ValueNotifier<double>(1.0),
        _supervisorNotificationService =
-           supervisorNotificationService ?? LocalSupervisorNotificationService(),
+           supervisorNotificationService ??
+           LocalSupervisorNotificationService(),
        _audioService = audioService ?? JustAudioService(),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _coldStartDialogueDelaySeconds = max(0, coldStartDialogueDelaySeconds) {
+    _lastInteractionAt = _now();
+  }
+
+  static const Map<String, int> _dialoguePriority = <String, int>{
+    'completed': 1,
+    'start_focus': 2,
+    'resume': 3,
+    'cold_start': 4,
+    'clicked': 5,
+    'idle': 6,
+  };
+
+  static const Map<String, List<_DialogueCandidate>> _builtInDialogues =
+      <String, List<_DialogueCandidate>>{
+        'start_focus': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 1,
+            lines: <String>['开始今天这一轮专注吧。', '我会在这里陪着你。'],
+          ),
+        ],
+        'completed': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 1,
+            lines: <String>['这一轮做得不错，先休息一下。', '记得活动活动肩膀。'],
+          ),
+        ],
+        'resume': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 1,
+            lines: <String>['欢迎回来，专注还在继续。', '我们接着刚才的节奏。'],
+          ),
+        ],
+        'cold_start': <_DialogueCandidate>[
+          _DialogueCandidate(requiredLevel: 1, lines: <String>['我回来了！']),
+        ],
+        'clicked': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 2,
+            lines: <String>['嗯？你是在叫我吗？', '现在适合整理一下接下来的安排。'],
+          ),
+        ],
+        'idle': <_DialogueCandidate>[
+          _DialogueCandidate(
+            requiredLevel: 4,
+            lines: <String>['休息太久的话，节奏会散掉哦。', '要不要开始下一轮？'],
+          ),
+        ],
+      };
 
   final ValueNotifier<int> remainingSeconds;
   final ValueNotifier<bool> isActive;
@@ -223,13 +291,35 @@ class AppController {
 
   SharedPreferences? _preferences;
   Timer? _ticker;
+  Timer? _idleTimer;
   DateTime? _phaseStartedAt;
+  DateTime? _lastInteractionAt;
   int _phaseDurationSeconds = kDefaultPomodoroSeconds;
   String? _activeSupervisorSessionId;
   DateTime? _lastBackgroundAt;
   bool _stage3mSent = false;
   bool _stage6mSent = false;
   bool _musicPausedForLifecycle = false;
+  _UiSfxType? _lastUiSfxType;
+  DateTime? _lastUiSfxTriggeredAt;
+  bool _isInForeground = true;
+  bool _hasTriggeredColdStartDialogue = false;
+  Timer? _coldStartDialogueTimer;
+  int _coldStartDialogueDelaySeconds;
+
+  bool _isTalking = false;
+  String _currentDialogue = '';
+  String _currentDialogueType = '';
+  List<String> _currentDialogueQueue = <String>[];
+  int _currentDialogueIndex = 0;
+  final List<String> _queuedDialogueTypes = <String>[];
+  Map<String, List<_DialogueCandidate>>? _dialoguesFromAssets;
+  Future<Map<String, List<_DialogueCandidate>>>? _dialogueLoadTask;
+
+  bool get isTalking => _isTalking;
+  String get currentDialogue => _currentDialogue;
+  String get currentDialogueType => _currentDialogueType;
+  int get coldStartDialogueDelaySeconds => _coldStartDialogueDelaySeconds;
 
   static String _formatCurrentDate() {
     final DateTime now = DateTime.now();
@@ -259,7 +349,9 @@ class AppController {
         '[AppController] Supervisor notification permission ready=$permissionGranted',
       );
     } catch (error, stackTrace) {
-      debugPrint('[AppController] Failed to initialize notifications: $error\n$stackTrace');
+      debugPrint(
+        '[AppController] Failed to initialize notifications: $error\n$stackTrace',
+      );
     }
 
     try {
@@ -268,7 +360,9 @@ class AppController {
         volume: musicVolume.value,
       );
     } catch (error, stackTrace) {
-      debugPrint('[AppController] Failed to initialize audio: $error\n$stackTrace');
+      debugPrint(
+        '[AppController] Failed to initialize audio: $error\n$stackTrace',
+      );
     }
 
     final _PomodoroSnapshot? snapshot = _PomodoroSnapshot.fromJsonString(
@@ -276,7 +370,9 @@ class AppController {
     );
 
     if (snapshot == null) {
-      await _persistSnapshot(_readySnapshot());
+      final _PomodoroSnapshot readySnapshot = _readySnapshot();
+      _applySnapshot(readySnapshot, startTickerIfRunning: false);
+      await _persistSnapshot(readySnapshot);
     } else {
       final int restoredFocus = _sanitizeDurationOrDefault(
         snapshot.focusDurationSeconds,
@@ -313,13 +409,91 @@ class AppController {
     if (musicAutoPlayEnabled.value && isMusicPlaying.value) {
       await _playBgmForCurrentState();
     }
+
+    _resetIdleTimer();
+    unawaited(_ensureDialoguesLoaded());
+  }
+
+  void setColdStartDialogueDelaySeconds(int seconds) {
+    _coldStartDialogueDelaySeconds = max(0, seconds);
+  }
+
+  void scheduleColdStartDialogueAfterEntrance({int? delaySeconds}) {
+    if (_hasTriggeredColdStartDialogue || _coldStartDialogueTimer != null) {
+      return;
+    }
+
+    final int effectiveDelay = max(
+      0,
+      delaySeconds ?? _coldStartDialogueDelaySeconds,
+    );
+
+    _coldStartDialogueTimer = Timer(Duration(seconds: effectiveDelay), () {
+      _coldStartDialogueTimer = null;
+      unawaited(_maybeTriggerColdStartDialogue());
+    });
   }
 
   Future<void> synchronizeWithCurrentTime() async {
-    final _PomodoroSnapshot? snapshot = _syncRunningState(_now());
-    if (snapshot != null) {
-      await _persistSnapshot(snapshot);
+    _isInForeground = true;
+    _lastInteractionAt = _now();
+    currentDate.value = _formatCurrentDate();
+
+    if (phaseStatus.value != PomodoroPhaseStatus.running ||
+        _phaseStartedAt == null) {
+      _refreshIdleTimer();
+      return;
     }
+
+    final DateTime now = _now();
+    final bool wasStudying = pomodoroState.value == PomodoroState.studying;
+    final int elapsedSeconds = now.difference(_phaseStartedAt!).inSeconds;
+
+    if (elapsedSeconds < _phaseDurationSeconds) {
+      final int updatedRemaining = _remainingFromStart(
+        startedAt: _phaseStartedAt!,
+        phaseDurationSeconds: _phaseDurationSeconds,
+        now: now,
+      );
+      if (remainingSeconds.value != updatedRemaining) {
+        remainingSeconds.value = updatedRemaining;
+      }
+      await _persistSnapshot(_currentSnapshot());
+      if (wasStudying) {
+        await triggerDialogue('resume');
+      }
+      _refreshIdleTimer();
+      return;
+    }
+
+    final _PhaseAdvanceResult result = _advanceSnapshotAfterElapsed(
+      snapshot: _snapshotForTransition(),
+      elapsedSeconds: elapsedSeconds,
+      now: now,
+    );
+    _applySnapshot(result.snapshot, startTickerIfRunning: true);
+    await _applyPhaseAdvanceSideEffects(result, replayAudio: false);
+    await _persistSnapshot(result.snapshot);
+
+    if (wasStudying) {
+      if (result.snapshot.pomodoroState == PomodoroState.studying) {
+        await triggerDialogue('resume');
+      } else {
+        await triggerDialogue('completed');
+      }
+    }
+
+    _refreshIdleTimer();
+  }
+
+  void handleAppBackgrounded() {
+    _isInForeground = false;
+    _idleTimer?.cancel();
+    _idleTimer = null;
+  }
+
+  void registerUserInteraction() {
+    _resetIdleTimer();
   }
 
   void toggleTimer() {
@@ -331,6 +505,8 @@ class AppController {
   }
 
   void startTimer() {
+    registerUserInteraction();
+
     if (phaseStatus.value == PomodoroPhaseStatus.running) {
       return;
     }
@@ -350,16 +526,21 @@ class AppController {
       Duration(seconds: _phaseDurationSeconds - remainingSeconds.value),
     );
     _startTicker();
+    _refreshIdleTimer();
     unawaited(_persistSnapshot(_currentSnapshot()));
 
     if (wasReady) {
       unawaited(_audioService.playStartSfx());
+      unawaited(triggerDialogue('start_focus'));
     }
   }
 
   void pauseTimer() {
+    registerUserInteraction();
+
     final PomodoroPhaseStatus status = phaseStatus.value;
-    if (status == PomodoroPhaseStatus.ready || status == PomodoroPhaseStatus.paused) {
+    if (status == PomodoroPhaseStatus.ready ||
+        status == PomodoroPhaseStatus.paused) {
       return;
     }
 
@@ -368,11 +549,14 @@ class AppController {
     phaseStatus.value = PomodoroPhaseStatus.paused;
     isActive.value = false;
     _phaseStartedAt = null;
+    _refreshIdleTimer();
     unawaited(_persistSnapshot(_currentSnapshot()));
     unawaited(_cancelSupervisorSession(clearState: true));
   }
 
   void resetTimer() {
+    registerUserInteraction();
+
     if (phaseStatus.value == PomodoroPhaseStatus.ready) {
       return;
     }
@@ -390,6 +574,8 @@ class AppController {
   }
 
   void updateFocusDuration(int seconds) {
+    registerUserInteraction();
+
     if (!_isValidDuration(seconds)) {
       return;
     }
@@ -404,10 +590,13 @@ class AppController {
       _phaseDurationSeconds = seconds;
     }
 
+    _refreshIdleTimer();
     unawaited(_persistSnapshot(_currentSnapshot()));
   }
 
   void updateRestDuration(int seconds) {
+    registerUserInteraction();
+
     if (!_isValidDuration(seconds)) {
       return;
     }
@@ -416,10 +605,13 @@ class AppController {
     }
 
     restDurationSeconds.value = seconds;
+    _refreshIdleTimer();
     unawaited(_persistSnapshot(_currentSnapshot()));
   }
 
   void updateCycleCount(int? count) {
+    registerUserInteraction();
+
     final int? sanitized = _sanitizeCycleCount(count);
     if (count != sanitized) {
       return;
@@ -429,10 +621,82 @@ class AppController {
     }
 
     cycleCount.value = sanitized;
+    _refreshIdleTimer();
     unawaited(_persistSnapshot(_currentSnapshot()));
   }
 
+  Future<void> triggerDialogue(String type) async {
+    if (!_canTriggerDialogue(type)) {
+      return;
+    }
+
+    if (_isTalking) {
+      final _DialogueArbitration arbitration = _arbitrateWhenTalking(type);
+      if (arbitration == _DialogueArbitration.ignore) {
+        return;
+      }
+      if (arbitration == _DialogueArbitration.queue) {
+        _enqueueDialogueType(type);
+        return;
+      }
+    }
+
+    final List<String> queue = await _loadDialogueQueue(type);
+    if (queue.isEmpty) {
+      return;
+    }
+
+    if (!_canTriggerDialogue(type)) {
+      return;
+    }
+
+    if (_isTalking) {
+      final _DialogueArbitration arbitration = _arbitrateWhenTalking(type);
+      if (arbitration == _DialogueArbitration.ignore) {
+        return;
+      }
+      if (arbitration == _DialogueArbitration.queue) {
+        _enqueueDialogueType(type);
+        return;
+      }
+    }
+
+    _enterDialogue(type, queue);
+  }
+
+  void nextDialogue() {
+    registerUserInteraction();
+
+    if (!_isTalking) {
+      return;
+    }
+
+    final int nextIndex = _currentDialogueIndex + 1;
+    if (nextIndex >= _currentDialogueQueue.length) {
+      _exitDialogue();
+      return;
+    }
+
+    _currentDialogueIndex = nextIndex;
+    _currentDialogue = _currentDialogueQueue[nextIndex];
+    notifyListeners();
+  }
+
+  void skipDialogue() {
+    registerUserInteraction();
+
+    if (!_isTalking &&
+        _currentDialogueQueue.isEmpty &&
+        _currentDialogueType.isEmpty) {
+      return;
+    }
+
+    _exitDialogue();
+  }
+
+  /// 从本地存储读取历史时长数据（由组员 C 填充逻辑）
   void fetchHistoryData() {
+    registerUserInteraction();
     // 历史统计契约不在当前批次范围内，这里保留给 UI 的兼容入口。
   }
 
@@ -443,8 +707,12 @@ class AppController {
 
     if (state == AppLifecycleState.resumed) {
       await _cancelSupervisorSession(clearState: true);
-      if (_musicPausedForLifecycle && musicAutoPlayEnabled.value && isMusicPlaying.value) {
-        final bool resumed = await _audioService.resumeBgm(volume: musicVolume.value);
+      if (_musicPausedForLifecycle &&
+          musicAutoPlayEnabled.value &&
+          isMusicPlaying.value) {
+        final bool resumed = await _audioService.resumeBgm(
+          volume: musicVolume.value,
+        );
         if (!resumed) {
           debugPrint('[AppController] Failed to resume lifecycle-paused BGM.');
           isMusicPlaying.value = false;
@@ -459,13 +727,16 @@ class AppController {
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
-      if (!_musicPausedForLifecycle && musicAutoPlayEnabled.value && isMusicPlaying.value) {
+      if (!_musicPausedForLifecycle &&
+          musicAutoPlayEnabled.value &&
+          isMusicPlaying.value) {
         await _audioService.pauseBgm();
         _musicPausedForLifecycle = true;
       }
     }
 
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       if (phaseStatus.value != PomodoroPhaseStatus.running ||
           pomodoroState.value != PomodoroState.studying) {
         debugPrint(
@@ -485,10 +756,11 @@ class AppController {
       debugPrint(
         '[AppController] Attempt supervisor scheduling session=$sessionId at ${backgroundedAt.toIso8601String()}',
       );
-      final bool scheduled = await _supervisorNotificationService.scheduleSupervisorSession(
-        backgroundedAt: backgroundedAt,
-        sessionId: sessionId,
-      );
+      final bool scheduled = await _supervisorNotificationService
+          .scheduleSupervisorSession(
+            backgroundedAt: backgroundedAt,
+            sessionId: sessionId,
+          );
       if (!scheduled) {
         debugPrint('[AppController] Supervisor reminders skipped.');
         return;
@@ -533,6 +805,16 @@ class AppController {
   }
 
   bool canUnlockDialogue(int requiredLevel) => level.value >= requiredLevel;
+
+  int requiredDialogueLevel(String type) => _requiredDialogueLevel(type);
+
+  bool isDialogueTypeUnlocked(String type) {
+    return canUnlockDialogue(_requiredDialogueLevel(type));
+  }
+
+  String dialogueTypeLockReason(String type) {
+    return dialogueLockReason(_requiredDialogueLevel(type));
+  }
 
   String dialogueLockReason(int requiredLevel) {
     if (canUnlockDialogue(requiredLevel)) {
@@ -612,6 +894,14 @@ class AppController {
     }
   }
 
+  Future<void> triggerUiOpenSfx() async {
+    await _playUiSfx(_UiSfxType.open);
+  }
+
+  Future<void> triggerUiBackSfx() async {
+    await _playUiSfx(_UiSfxType.back);
+  }
+
   int get currentPhaseDurationSeconds => _currentPhaseTotalSeconds;
 
   int get _currentPhaseTotalSeconds {
@@ -619,9 +909,13 @@ class AppController {
       return focusDurationSeconds.value;
     }
     if (pomodoroState.value == PomodoroState.studying) {
-      return _phaseDurationSeconds > 0 ? _phaseDurationSeconds : focusDurationSeconds.value;
+      return _phaseDurationSeconds > 0
+          ? _phaseDurationSeconds
+          : focusDurationSeconds.value;
     }
-    return _phaseDurationSeconds > 0 ? _phaseDurationSeconds : restDurationSeconds.value;
+    return _phaseDurationSeconds > 0
+        ? _phaseDurationSeconds
+        : restDurationSeconds.value;
   }
 
   void _startTicker() {
@@ -658,10 +952,12 @@ class AppController {
   _PomodoroSnapshot? _syncRunningState(DateTime now) {
     currentDate.value = _formatCurrentDate();
 
-    if (phaseStatus.value != PomodoroPhaseStatus.running || _phaseStartedAt == null) {
+    if (phaseStatus.value != PomodoroPhaseStatus.running ||
+        _phaseStartedAt == null) {
       return null;
     }
 
+    final bool wasStudying = pomodoroState.value == PomodoroState.studying;
     final int elapsedSeconds = now.difference(_phaseStartedAt!).inSeconds;
     if (elapsedSeconds < _phaseDurationSeconds) {
       final int updatedRemaining = _remainingFromStart(
@@ -682,6 +978,10 @@ class AppController {
     );
     _applySnapshot(result.snapshot, startTickerIfRunning: true);
     unawaited(_applyPhaseAdvanceSideEffects(result, replayAudio: true));
+    if (wasStudying &&
+        result.snapshot.pomodoroState != PomodoroState.studying) {
+      unawaited(triggerDialogue('completed'));
+    }
     return result.snapshot;
   }
 
@@ -711,18 +1011,23 @@ class AppController {
           ? PomodoroState.resting
           : snapshot.pomodoroState,
       phaseStatus: snapshot.phaseStatus,
-      startedAt: snapshot.phaseStatus == PomodoroPhaseStatus.running ? snapshot.startedAt : null,
+      startedAt: snapshot.phaseStatus == PomodoroPhaseStatus.running
+          ? snapshot.startedAt
+          : null,
       phaseDurationSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
           : _sanitizeDurationOrDefault(
               snapshot.phaseDurationSeconds,
-              snapshot.pomodoroState == PomodoroState.studying ? focusSeconds : restSeconds,
+              snapshot.pomodoroState == PomodoroState.studying
+                  ? focusSeconds
+                  : restSeconds,
             ),
       remainingSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
           : _sanitizeRemainingSeconds(
               seconds: snapshot.remainingSeconds,
-              phaseDurationSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
+              phaseDurationSeconds:
+                  snapshot.phaseStatus == PomodoroPhaseStatus.ready
                   ? focusSeconds
                   : _sanitizeDurationOrDefault(
                       snapshot.phaseDurationSeconds,
@@ -730,15 +1035,20 @@ class AppController {
                           ? focusSeconds
                           : restSeconds,
                     ),
-              fallback: snapshot.pomodoroState == PomodoroState.studying ? focusSeconds : restSeconds,
+              fallback: snapshot.pomodoroState == PomodoroState.studying
+                  ? focusSeconds
+                  : restSeconds,
             ),
       focusDurationSeconds: focusSeconds,
       restDurationSeconds: restSeconds,
       cycleCount: cycles,
-      completedFocusCycles: snapshot.completedFocusCycles < 0 ? 0 : snapshot.completedFocusCycles,
+      completedFocusCycles: snapshot.completedFocusCycles < 0
+          ? 0
+          : snapshot.completedFocusCycles,
     );
 
-    if (normalized.phaseStatus != PomodoroPhaseStatus.running || normalized.startedAt == null) {
+    if (normalized.phaseStatus != PomodoroPhaseStatus.running ||
+        normalized.startedAt == null) {
       return _PhaseAdvanceResult(
         snapshot: normalized.phaseStatus == PomodoroPhaseStatus.ready
             ? _readySnapshot()
@@ -798,7 +1108,9 @@ class AppController {
 
     while (true) {
       if (remainingElapsed < phaseDuration) {
-        final DateTime adjustedStart = now.subtract(Duration(seconds: remainingElapsed));
+        final DateTime adjustedStart = now.subtract(
+          Duration(seconds: remainingElapsed),
+        );
         return _PhaseAdvanceResult(
           snapshot: _PomodoroSnapshot(
             pomodoroState: state,
@@ -818,7 +1130,9 @@ class AppController {
       }
 
       remainingElapsed -= phaseDuration;
-      final DateTime completedAt = startedAt!.add(Duration(seconds: phaseDuration));
+      final DateTime completedAt = startedAt!.add(
+        Duration(seconds: phaseDuration),
+      );
 
       if (state == PomodoroState.studying) {
         completedCycles += 1;
@@ -887,7 +1201,10 @@ class AppController {
     }
   }
 
-  void _applySnapshot(_PomodoroSnapshot snapshot, {required bool startTickerIfRunning}) {
+  void _applySnapshot(
+    _PomodoroSnapshot snapshot, {
+    required bool startTickerIfRunning,
+  }) {
     _stopTicker();
     pomodoroState.value = snapshot.pomodoroState;
     phaseStatus.value = snapshot.phaseStatus;
@@ -900,10 +1217,402 @@ class AppController {
     _phaseStartedAt = snapshot.startedAt;
     isActive.value = snapshot.phaseStatus == PomodoroPhaseStatus.running;
     currentDate.value = _formatCurrentDate();
+    _refreshIdleTimer();
 
-    if (startTickerIfRunning && snapshot.phaseStatus == PomodoroPhaseStatus.running) {
+    if (startTickerIfRunning &&
+        snapshot.phaseStatus == PomodoroPhaseStatus.running) {
       _startTicker();
     }
+  }
+
+  Future<List<String>> _loadDialogueQueue(String type) async {
+    final Map<String, List<_DialogueCandidate>> dialogues =
+        await _ensureDialoguesLoaded(forceReload: true);
+
+    final List<_DialogueCandidate>? directCandidates = dialogues[type];
+    if (directCandidates != null && directCandidates.isNotEmpty) {
+      return _pickUnlockedDialogueQueue(directCandidates);
+    }
+
+    final List<_DialogueCandidate>? assetFallback =
+        dialogues['_fallback.default'];
+    if (assetFallback != null && assetFallback.isNotEmpty) {
+      return _pickUnlockedDialogueQueue(assetFallback);
+    }
+
+    final List<_DialogueCandidate>? builtInCandidates = _builtInDialogues[type];
+    if (builtInCandidates != null && builtInCandidates.isNotEmpty) {
+      return _pickUnlockedDialogueQueue(builtInCandidates);
+    }
+
+    return List<String>.of(_kDefaultDialogueFallback);
+  }
+
+  List<String> _pickUnlockedDialogueQueue(List<_DialogueCandidate> candidates) {
+    final int currentLevel = level.value;
+    final List<_DialogueCandidate> unlockedCandidates = candidates
+        .where(
+          (_DialogueCandidate candidate) =>
+              candidate.lines.isNotEmpty &&
+              currentLevel >= candidate.requiredLevel,
+        )
+        .toList(growable: false);
+    if (unlockedCandidates.isEmpty) {
+      return const <String>[];
+    }
+
+    final int randomIndex = Random().nextInt(unlockedCandidates.length);
+    return List<String>.of(unlockedCandidates[randomIndex].lines);
+  }
+
+  int _requiredDialogueLevel(String type) {
+    final List<_DialogueCandidate>? directCandidates =
+        _dialoguesFromAssets?[type];
+    if (directCandidates != null && directCandidates.isNotEmpty) {
+      return _minRequiredDialogueLevel(directCandidates);
+    }
+
+    final List<_DialogueCandidate>? builtInCandidates = _builtInDialogues[type];
+    if (builtInCandidates != null && builtInCandidates.isNotEmpty) {
+      return _minRequiredDialogueLevel(builtInCandidates);
+    }
+
+    return 1;
+  }
+
+  int _minRequiredDialogueLevel(List<_DialogueCandidate> candidates) {
+    return candidates.map((candidate) => candidate.requiredLevel).reduce(min);
+  }
+
+  int _getDialoguePriority(String type) {
+    return _dialoguePriority[type] ?? 999;
+  }
+
+  _DialogueArbitration _arbitrateWhenTalking(String incomingType) {
+    final int currentPriority = _getDialoguePriority(_currentDialogueType);
+    final int incomingPriority = _getDialoguePriority(incomingType);
+
+    if (incomingPriority == currentPriority) {
+      return _DialogueArbitration.ignore;
+    }
+
+    if (incomingPriority > currentPriority) {
+      return _DialogueArbitration.queue;
+    }
+
+    if (incomingPriority > _getDialoguePriority('resume')) {
+      return _DialogueArbitration.queue;
+    }
+
+    return _DialogueArbitration.interrupt;
+  }
+
+  void _enqueueDialogueType(String type) {
+    if (_queuedDialogueTypes.contains(type)) {
+      return;
+    }
+
+    _queuedDialogueTypes.add(type);
+  }
+
+  bool _canTriggerDialogue(String type) {
+    if (!_dialoguePriority.containsKey(type)) {
+      return false;
+    }
+
+    if (type == 'resume') {
+      return pomodoroState.value == PomodoroState.studying &&
+          phaseStatus.value == PomodoroPhaseStatus.running;
+    }
+
+    if (type == 'start_focus') {
+      return pomodoroState.value == PomodoroState.studying;
+    }
+
+    if (type == 'cold_start') {
+      return pomodoroState.value == PomodoroState.resting;
+    }
+
+    if (pomodoroState.value == PomodoroState.studying) {
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<void> _maybeTriggerColdStartDialogue() async {
+    if (_hasTriggeredColdStartDialogue) {
+      return;
+    }
+
+    _hasTriggeredColdStartDialogue = true;
+    await triggerDialogue('cold_start');
+  }
+
+  void _startIdleTimer() {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+
+    if (!_isInForeground ||
+        pomodoroState.value != PomodoroState.resting ||
+        _isTalking) {
+      return;
+    }
+
+    _lastInteractionAt ??= DateTime.now();
+    final Duration elapsed = DateTime.now().difference(_lastInteractionAt!);
+    final Duration remaining = kIdleDialogueTimeout - elapsed;
+
+    _idleTimer = Timer(remaining.isNegative ? Duration.zero : remaining, () {
+      _idleTimer = null;
+      unawaited(triggerDialogue('idle'));
+    });
+  }
+
+  void _resetIdleTimer() {
+    _lastInteractionAt = DateTime.now();
+    _startIdleTimer();
+  }
+
+  void _refreshIdleTimer() {
+    if (!_isInForeground ||
+        pomodoroState.value != PomodoroState.resting ||
+        _isTalking) {
+      _idleTimer?.cancel();
+      _idleTimer = null;
+      return;
+    }
+
+    _startIdleTimer();
+  }
+
+  void _enterDialogue(String type, List<String> queue) {
+    if (queue.isEmpty) {
+      return;
+    }
+
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    _lastInteractionAt = DateTime.now();
+    _isTalking = true;
+    _currentDialogueType = type;
+    _currentDialogueQueue = List<String>.of(queue);
+    _currentDialogueIndex = 0;
+    _currentDialogue = _currentDialogueQueue.first;
+    notifyListeners();
+  }
+
+  void _exitDialogue() {
+    _clearDialogueState();
+    notifyListeners();
+    _refreshIdleTimer();
+    unawaited(_drainQueuedDialogues());
+  }
+
+  Future<void> _drainQueuedDialogues() async {
+    while (!_isTalking && _queuedDialogueTypes.isNotEmpty) {
+      final String nextType = _queuedDialogueTypes.removeAt(0);
+      await triggerDialogue(nextType);
+    }
+  }
+
+  void _clearDialogueState() {
+    _isTalking = false;
+    _currentDialogue = '';
+    _currentDialogueType = '';
+    _currentDialogueQueue = <String>[];
+    _currentDialogueIndex = 0;
+  }
+
+  Future<Map<String, List<_DialogueCandidate>>> _ensureDialoguesLoaded({
+    bool forceReload = false,
+  }) async {
+    if (forceReload) {
+      _dialoguesFromAssets = null;
+      _dialogueLoadTask = null;
+    }
+
+    if (_dialoguesFromAssets != null) {
+      return _dialoguesFromAssets!;
+    }
+    if (_dialogueLoadTask != null) {
+      return _dialogueLoadTask!;
+    }
+
+    _dialogueLoadTask = _readDialoguesFromAssets();
+    final Map<String, List<_DialogueCandidate>> dialogues =
+        await _dialogueLoadTask!;
+    _dialoguesFromAssets = dialogues;
+    _dialogueLoadTask = null;
+    return dialogues;
+  }
+
+  Future<Map<String, List<_DialogueCandidate>>>
+  _readDialoguesFromAssets() async {
+    try {
+      final String raw = await rootBundle.loadString(_kDialogueAssetPath);
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        return <String, List<_DialogueCandidate>>{};
+      }
+
+      final Map<String, List<_DialogueCandidate>> result =
+          <String, List<_DialogueCandidate>>{};
+      for (final MapEntry<String, dynamic> entry in decoded.entries) {
+        if (entry.key == '_fallback') {
+          final dynamic fallback = entry.value;
+          if (fallback is Map<String, dynamic>) {
+            final List<_DialogueCandidate> fallbackQueue =
+                _sanitizeDialogueCandidates(fallback['default']);
+            if (fallbackQueue.isNotEmpty) {
+              result['_fallback.default'] = fallbackQueue;
+            }
+          }
+          continue;
+        }
+
+        final List<_DialogueCandidate> queue = _sanitizeDialogueCandidates(
+          entry.value,
+        );
+        if (queue.isNotEmpty) {
+          result[entry.key] = queue;
+        }
+      }
+      return result;
+    } on FlutterError {
+      return <String, List<_DialogueCandidate>>{};
+    } on FormatException {
+      return <String, List<_DialogueCandidate>>{};
+    } on TypeError {
+      return <String, List<_DialogueCandidate>>{};
+    }
+  }
+
+  List<_DialogueCandidate> _sanitizeDialogueCandidates(dynamic source) {
+    if (source is! List<dynamic>) {
+      return const <_DialogueCandidate>[];
+    }
+
+    final List<_DialogueCandidate> candidates = <_DialogueCandidate>[];
+    final List<String> flatQueue = <String>[];
+
+    for (final dynamic item in source) {
+      if (item is List<dynamic>) {
+        final _DialogueCandidate? candidate = _dialogueCandidateFromArray(item);
+        if (candidate != null) {
+          candidates.add(candidate);
+        }
+        continue;
+      }
+
+      if (item is Map<String, dynamic>) {
+        final _DialogueCandidate? candidate = _dialogueCandidateFromMap(item);
+        if (candidate != null) {
+          candidates.add(candidate);
+        }
+        continue;
+      }
+
+      if (item is String) {
+        final String trimmed = item.trim();
+        if (trimmed.isNotEmpty) {
+          flatQueue.add(trimmed);
+        }
+      }
+    }
+
+    if (candidates.isEmpty && flatQueue.isNotEmpty) {
+      candidates.add(
+        _DialogueCandidate(
+          requiredLevel: 1,
+          lines: List<String>.of(flatQueue, growable: false),
+        ),
+      );
+    }
+
+    if (candidates.isNotEmpty && flatQueue.isNotEmpty) {
+      candidates.insert(
+        0,
+        _DialogueCandidate(
+          requiredLevel: 1,
+          lines: List<String>.of(flatQueue, growable: false),
+        ),
+      );
+    }
+
+    return candidates;
+  }
+
+  _DialogueCandidate? _dialogueCandidateFromArray(List<dynamic> source) {
+    if (source.isEmpty) {
+      return null;
+    }
+
+    int requiredLevel = 1;
+    int startIndex = 0;
+    final int? parsedLevel = _parsePositiveLevel(source.first);
+    if (parsedLevel != null) {
+      requiredLevel = parsedLevel;
+      startIndex = 1;
+    }
+
+    if (startIndex >= source.length) {
+      return null;
+    }
+
+    final List<String> lines = source
+        .skip(startIndex)
+        .whereType<String>()
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+    if (lines.isEmpty) {
+      return null;
+    }
+
+    return _DialogueCandidate(requiredLevel: requiredLevel, lines: lines);
+  }
+
+  _DialogueCandidate? _dialogueCandidateFromMap(Map<String, dynamic> source) {
+    final int requiredLevel = _parsePositiveLevel(source['level']) ?? 1;
+    final dynamic linesSource =
+        source['lines'] ?? source['dialogue'] ?? source['content'];
+    final List<String> lines = _sanitizeDialogueList(linesSource);
+    if (lines.isEmpty) {
+      return null;
+    }
+
+    return _DialogueCandidate(requiredLevel: requiredLevel, lines: lines);
+  }
+
+  int? _parsePositiveLevel(dynamic source) {
+    if (source is int) {
+      return source > 0 ? source : null;
+    }
+    if (source is num) {
+      final int level = source.toInt();
+      return level > 0 ? level : null;
+    }
+    if (source is String) {
+      final int? parsed = int.tryParse(source.trim());
+      if (parsed != null && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  List<String> _sanitizeDialogueList(dynamic source) {
+    if (source is! List<dynamic>) {
+      return const <String>[];
+    }
+
+    return source
+        .whereType<String>()
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
   }
 
   _PomodoroSnapshot _readySnapshot() {
@@ -924,7 +1633,9 @@ class AppController {
     return _PomodoroSnapshot(
       pomodoroState: pomodoroState.value,
       phaseStatus: phaseStatus.value,
-      startedAt: phaseStatus.value == PomodoroPhaseStatus.running ? _phaseStartedAt : null,
+      startedAt: phaseStatus.value == PomodoroPhaseStatus.running
+          ? _phaseStartedAt
+          : null,
       phaseDurationSeconds: _currentPhaseTotalSeconds,
       remainingSeconds: phaseStatus.value == PomodoroPhaseStatus.running
           ? _remainingFromStart(
@@ -941,12 +1652,14 @@ class AppController {
   }
 
   Future<void> _persistSnapshot(_PomodoroSnapshot snapshot) async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     await prefs.setString(_kPomodoroSnapshotKey, jsonEncode(snapshot.toJson()));
   }
 
   Future<void> _restoreXpState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     totalXp.value = max(0, prefs.getInt(_kXpTotalKey) ?? 0);
     dailyXp.value = max(0, prefs.getInt(_kXpDailyKey) ?? 0);
     level.value = _levelForXp(totalXp.value);
@@ -958,7 +1671,8 @@ class AppController {
   }
 
   Future<void> _persistXpState({required DateTime accountingDate}) async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     await prefs.setInt(_kXpTotalKey, totalXp.value);
     await prefs.setInt(_kXpDailyKey, dailyXp.value);
     await prefs.setString(_kXpLastDateKey, _dateKey(accountingDate));
@@ -969,7 +1683,8 @@ class AppController {
     DateTime now, {
     bool persistIfChanged = true,
   }) async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     final String today = _dateKey(now);
     final String? lastDate = prefs.getString(_kXpLastDateKey);
     if (lastDate == null) {
@@ -988,8 +1703,10 @@ class AppController {
   }
 
   Future<void> _restoreMusicState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
-    musicAutoPlayEnabled.value = prefs.getBool(_kMusicAutoPlayEnabledKey) ?? true;
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
+    musicAutoPlayEnabled.value =
+        prefs.getBool(_kMusicAutoPlayEnabledKey) ?? true;
     isMusicPlaying.value = prefs.getBool(_kMusicIsPlayingKey) ?? true;
     currentTrackIndex.value = max(0, prefs.getInt(_kMusicTrackIndexKey) ?? 0);
     final double savedVolume = prefs.getDouble(_kMusicVolumeKey) ?? 1.0;
@@ -997,7 +1714,8 @@ class AppController {
   }
 
   Future<void> _persistMusicState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     await prefs.setBool(_kMusicAutoPlayEnabledKey, musicAutoPlayEnabled.value);
     await prefs.setBool(_kMusicIsPlayingKey, isMusicPlaying.value);
     await prefs.setInt(_kMusicTrackIndexKey, currentTrackIndex.value);
@@ -1015,17 +1733,63 @@ class AppController {
     return started;
   }
 
+  Future<void> _playUiSfx(_UiSfxType type) async {
+    final DateTime now = _now();
+    final DateTime? lastAt = _lastUiSfxTriggeredAt;
+    final Duration? elapsed = lastAt == null ? null : now.difference(lastAt);
+
+    final bool isRapidConsecutiveBurst =
+        elapsed != null && elapsed < _kUiSfxAnyTypeCooldown;
+    if (isRapidConsecutiveBurst) {
+      debugPrint(
+        '[AppController] Skip rapid consecutive UI SFX burst: ${type.name}.',
+      );
+      return;
+    }
+
+    final bool isDuplicateBurst =
+        _lastUiSfxType == type &&
+        elapsed != null &&
+        elapsed < _kUiSfxSameTypeDedupWindow;
+    if (isDuplicateBurst) {
+      debugPrint('[AppController] Skip duplicate UI SFX burst: ${type.name}.');
+      return;
+    }
+
+    _lastUiSfxType = type;
+    _lastUiSfxTriggeredAt = now;
+
+    final bool played;
+    if (type == _UiSfxType.open) {
+      played = await _audioService.playButtonOpenSfx();
+    } else {
+      played = await _audioService.playButtonBackSfx();
+    }
+
+    if (!played) {
+      debugPrint(
+        '[AppController] UI SFX playback degraded silently: ${type.name}.',
+      );
+    }
+  }
+
   Future<void> _restoreSupervisorState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     _activeSupervisorSessionId = prefs.getString(_kSupervisorSessionIdKey);
-    final String? rawBackgroundAt = prefs.getString(_kSupervisorLastBackgroundAtKey);
-    _lastBackgroundAt = rawBackgroundAt == null ? null : DateTime.tryParse(rawBackgroundAt)?.toLocal();
+    final String? rawBackgroundAt = prefs.getString(
+      _kSupervisorLastBackgroundAtKey,
+    );
+    _lastBackgroundAt = rawBackgroundAt == null
+        ? null
+        : DateTime.tryParse(rawBackgroundAt)?.toLocal();
     _stage3mSent = prefs.getBool(_kSupervisorStage3mSentKey) ?? false;
     _stage6mSent = prefs.getBool(_kSupervisorStage6mSentKey) ?? false;
   }
 
   Future<void> _persistSupervisorState() async {
-    final SharedPreferences prefs = _preferences ??= await SharedPreferences.getInstance();
+    final SharedPreferences prefs = _preferences ??=
+        await SharedPreferences.getInstance();
     if (_activeSupervisorSessionId == null) {
       await prefs.remove(_kSupervisorSessionIdKey);
       await prefs.remove(_kSupervisorLastBackgroundAtKey);
@@ -1034,7 +1798,10 @@ class AppController {
       return;
     }
 
-    await prefs.setString(_kSupervisorSessionIdKey, _activeSupervisorSessionId!);
+    await prefs.setString(
+      _kSupervisorSessionIdKey,
+      _activeSupervisorSessionId!,
+    );
     if (_lastBackgroundAt != null) {
       await prefs.setString(
         _kSupervisorLastBackgroundAtKey,
@@ -1069,7 +1836,8 @@ class AppController {
         a.restDurationSeconds == b.restDurationSeconds &&
         a.cycleCount == b.cycleCount &&
         a.completedFocusCycles == b.completedFocusCycles &&
-        a.startedAt?.millisecondsSinceEpoch == b.startedAt?.millisecondsSinceEpoch;
+        a.startedAt?.millisecondsSinceEpoch ==
+            b.startedAt?.millisecondsSinceEpoch;
   }
 
   int _remainingFromStart({
@@ -1128,10 +1896,15 @@ class AppController {
     return resolvedLevel;
   }
 
+  @override
   void dispose() {
+    _isInForeground = false;
     _stopTicker();
+    _coldStartDialogueTimer?.cancel();
+    _coldStartDialogueTimer = null;
     unawaited(_audioService.stopBgm());
     unawaited(_cancelSupervisorSession(clearState: false));
+    _idleTimer?.cancel();
     remainingSeconds.dispose();
     isActive.dispose();
     isDrawerOpen.dispose();
@@ -1150,5 +1923,6 @@ class AppController {
     musicAutoPlayEnabled.dispose();
     currentTrackIndex.dispose();
     musicVolume.dispose();
+    super.dispose();
   }
 }

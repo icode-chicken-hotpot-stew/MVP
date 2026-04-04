@@ -51,10 +51,14 @@ class FakeAudioService implements AudioService {
   int stopBgmCalls = 0;
   int playStartSfxCalls = 0;
   int playEncouragementSfxCalls = 0;
+  int playButtonOpenSfxCalls = 0;
+  int playButtonBackSfxCalls = 0;
   bool playBgmResult = true;
   bool resumeBgmResult = true;
   bool playStartSfxResult = true;
   bool playEncouragementSfxResult = true;
+  bool playButtonOpenSfxResult = true;
+  bool playButtonBackSfxResult = true;
   int? lastTrackIndex;
   double? lastVolume;
 
@@ -103,5 +107,17 @@ class FakeAudioService implements AudioService {
   Future<bool> playEncouragementSfx() async {
     playEncouragementSfxCalls += 1;
     return playEncouragementSfxResult;
+  }
+
+  @override
+  Future<bool> playButtonOpenSfx() async {
+    playButtonOpenSfxCalls += 1;
+    return playButtonOpenSfxResult;
+  }
+
+  @override
+  Future<bool> playButtonBackSfx() async {
+    playButtonBackSfxCalls += 1;
+    return playButtonBackSfxResult;
   }
 }

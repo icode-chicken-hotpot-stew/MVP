@@ -47,6 +47,7 @@ class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
     unawaited(controller.handleLifecycleStateChanged(state));
 
     if (state != AppLifecycleState.resumed) {
+      controller.handleAppBackgrounded();
       return;
     }
 
@@ -81,17 +82,7 @@ class _MainStageState extends State<MainStage> with WidgetsBindingObserver {
           content = UIWidgets(controller: controller);
         }
 
-        return Scaffold(
-          body: Container(
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage('assets/background.webp'),
-                fit: BoxFit.cover,
-              ),
-            ),
-            child: content,
-          ),
-        );
+        return Scaffold(body: content);
       },
     );
   }

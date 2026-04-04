@@ -24,7 +24,7 @@
 - [x] 3.5 Implement `canUnlockDialogue(requiredLevel)` with strict level-only gating
 - [x] 3.6 Return standardized lock reason for insufficient level (for UI copy reuse)
 
-## 4. Global background music and phase SFX
+## 4. Global background music and phase/UI SFX
 
 - [x] 4.1 Introduce audio playback integration suitable for BGM and short SFX
 - [x] 4.2 Auto-play BGM after app initialization regardless of pomodoro phase
@@ -33,6 +33,13 @@
 - [x] 4.5 Ensure audio failures degrade silently and do not block timer transitions
 - [x] 4.6 Define BGM and SFX coexistence behavior with separate playback channels
 - [ ] 4.7 Add actual BGM / SFX resource files under declared asset paths and verify runtime packaging
+- [x] 4.8 Add semantic UI SFX events for `button_open` and `button_back` through controller methods
+- [x] 4.9 Wire open/back interaction points to semantic UI SFX triggers without direct UI-to-player coupling
+- [x] 4.10 Add/verify four SFX assets (`study_start`, `study_end`, `button_open`, `button_back`) under declared asset paths
+- [x] 4.11 Align legacy SFX file naming from `focus_end.mp3` to `study_end.mp3` (or provide documented alias mapping)
+- [ ] 4.12 Verify packaged runtime loading for declared `assets/sfx/`
+- [x] 4.13 Add controller-level UI SFX dedup/throttle guard to avoid single-interaction duplicate playback
+- [x] 4.14 Add audio-service-level SFX in-flight/cooldown dedup guard and stop-before-play strategy
 
 ## 5. UI contract alignment
 
@@ -51,3 +58,5 @@
 - [x] 6.5 Run `flutter analyze` and `flutter test`
 - [ ] 6.6 Run manual Android verification for lifecycle transitions, notifications, and audio behavior
 - [ ] 6.7 Verify extension rollback does not affect existing pomodoro core behavior
+- [ ] 6.8 Run manual verification for open/back interaction SFX and ensure failures are non-blocking
+- [x] 6.9 Add regression tests for rapid repeated UI SFX (same-type and cross-type) and verify pass

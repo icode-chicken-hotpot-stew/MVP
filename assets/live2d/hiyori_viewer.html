@@ -296,11 +296,15 @@
                                 if (assetPath.endsWith('.model3.json')) {
                                     body = injectTexturesIntoModelJson(body);
                                 }
-                                const isJsonMotion = /\.(model3.json|motion3.json|pose3.json|physics3.json|userdata3.json)$/i.test(assetPath);
-                                try {
-                                    complete(true, isJsonMotion ? JSON.parse(body) : body, 'application/json');
-                                } catch (e) {
-                                    console.warn('[XHRPatch] JSON parse failed, returning raw body', e);
+                                const wantsJson = this.responseType === 'json';
+                                if (wantsJson) {
+                                    try {
+                                        complete(true, JSON.parse(body), 'application/json');
+                                    } catch (e) {
+                                        console.warn('[XHRPatch] JSON parse failed, returning raw body', e);
+                                        complete(true, body, 'application/json');
+                                    }
+                                } else {
                                     complete(true, body, 'application/json');
                                 }
                             }
@@ -409,13 +413,224 @@
 
     <script>
         let app = null;
+        let modelLayer = null;
         let model = null;
+        const MOTION_PRIORITY_FORCE = 100;
+        const MOTION_PRIORITY_BASE = 1;
+        // Keep HTML Y anchor neutral; let Flutter verticalOffset drive final Y movement.
+        const LAYER_BASE_Y_RATIO = 0.5;
+        const LAYER_OFFSET_Y_PX = 0;
+        const LAYER_OFFSET_X_PX = 0;
+        const ENABLE_TOP_CLAMP = true;
+        const SAFE_TOP_PADDING_PX = 16;
+        const MAX_TOP_CLAMP_PX = 48;
+        const MODEL_SCALE = 0.24;
+        const TAP_ZONE_WIDTH_RATIO = 0.65;
+        const TAP_ZONE_HEIGHT_RATIO = 0.86;
+        let _externalOffsetX = 0;
+        let _externalOffsetY = 0;
+        let _currentCharacterState = 'normal';
+        let _pendingCharacterState = null;
+        let _isTransientMotionPlaying = false;
+        let _motionGroupNameMap = {};
+        let _canPlaySmileOnTap = true;
+        const ANGRY_MOTION_DURATION_MS = 5210;
+        const START_MOTION_FALLBACK_MS = 1400;
+        let _startMotionDurationMs = START_MOTION_FALLBACK_MS;
+        let _startInitialParams = {};
+        const SMILE_MOTION_DURATION_MS = 2030;
+        const TALK_MOTION_DURATION_MS = 2030;
+
+        function resolveModelAssetUrl(relativePath) {
+            return new URL(String(relativePath || ''), document.baseURI).toString();
+        }
+
+        function toAbsoluteModelPath(path) {
+            const raw = String(path || '');
+            if (!raw || raw.startsWith('http') || raw.startsWith('data:') || raw.startsWith('blob:')) {
+                return raw;
+            }
+            return resolveModelAssetUrl(raw);
+        }
+
+        function resolveMotionGroupName(group) {
+            const raw = String(group || '');
+            const key = raw.toLowerCase();
+            return _motionGroupNameMap[key] || raw;
+        }
+
+        function keepModelInViewport(bottomMargin = 8) {
+            // Disabled to avoid motion-time vertical snapping/jitter.
+            return;
+        }
+
+        function setViewportOffset(x = 0, y = 0) {
+            _externalOffsetX = Number(x) || 0;
+            _externalOffsetY = Number(y) || 0;
+            if (typeof window._applyVerticalAlignment === 'function') {
+                try {
+                    window._applyVerticalAlignment(window.innerWidth, window.innerHeight);
+                } catch (e) {
+                    console.warn('[Live2D] setViewportOffset apply failed', e);
+                }
+            }
+        }
+
+        window.setViewportOffset = setViewportOffset;
+
+        function getPointerGlobalPoint(event) {
+            const point = event?.global || event?.data?.global;
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                return null;
+            }
+            return { x: Number(point.x), y: Number(point.y) };
+        }
+
+        function isPointerWithinTapZone(event) {
+            if (!model) {
+                return false;
+            }
+
+            const p = getPointerGlobalPoint(event);
+            if (!p) {
+                // If pointer data is unavailable, don't block a valid model pointertap.
+                return true;
+            }
+
+            try {
+                const localBounds = model.getLocalBounds();
+                const width = Number(localBounds?.width) || 0;
+                const height = Number(localBounds?.height) || 0;
+                if (width <= 0 || height <= 0) {
+                    return true;
+                }
+
+                const x0 = Number(localBounds?.x) || 0;
+                const y0 = Number(localBounds?.y) || 0;
+                const cx = x0 + width / 2;
+                const cy = y0 + height / 2;
+                const zoneW = width * TAP_ZONE_WIDTH_RATIO;
+                const zoneH = height * TAP_ZONE_HEIGHT_RATIO;
+
+                let localPoint = null;
+                if (typeof PIXI !== 'undefined' && PIXI?.Point && typeof model.toLocal === 'function') {
+                    localPoint = model.toLocal(new PIXI.Point(p.x, p.y));
+                }
+                if (!localPoint || !Number.isFinite(localPoint.x) || !Number.isFinite(localPoint.y)) {
+                    return true;
+                }
+
+                const left = cx - zoneW / 2;
+                const right = cx + zoneW / 2;
+                const top = cy - zoneH / 2;
+                const bottom = cy + zoneH / 2;
+
+                return localPoint.x >= left && localPoint.x <= right && localPoint.y >= top && localPoint.y <= bottom;
+            } catch (e) {
+                console.warn('[Live2D] tap-zone check failed', e);
+                return true;
+            }
+        }
+
+        function extractInitialParameterValuesFromMotion(motionJson) {
+            const result = {};
+            const curves = motionJson?.Curves;
+            if (!Array.isArray(curves)) {
+                return result;
+            }
+
+            for (const curve of curves) {
+                if (curve?.Target !== 'Parameter' || !curve?.Id) {
+                    continue;
+                }
+                const segments = curve?.Segments;
+                if (!Array.isArray(segments) || segments.length < 2) {
+                    continue;
+                }
+                const initialValue = Number(segments[1]);
+                if (Number.isFinite(initialValue)) {
+                    result[String(curve.Id)] = initialValue;
+                }
+            }
+
+            return result;
+        }
+
+        function applyStartInitialPoseToModel() {
+            const coreModel = model?.internalModel?.coreModel;
+            if (!coreModel || typeof coreModel.setParameterValueById !== 'function') {
+                return false;
+            }
+
+            let applied = 0;
+            for (const [paramId, value] of Object.entries(_startInitialParams || {})) {
+                try {
+                    coreModel.setParameterValueById(paramId, value);
+                    applied += 1;
+                } catch (_) {
+                    // Ignore missing parameter IDs to keep compatibility.
+                }
+            }
+
+            return applied > 0;
+        }
+
+        function postBridgeMessage(type, payload = {}) {
+            if (!window.Live2DController) {
+                return;
+            }
+            Live2DController.postMessage(JSON.stringify({
+                type,
+                ...payload,
+            }));
+        }
 
         function updateStatus(message) {
             console.log('[Live2D]', message);
-            if (window.Live2DController) {
-                Live2DController.postMessage(message);
+        }
+
+        function triggerSmileMotion() {
+            if (!_canPlaySmileOnTap) {
+                return;
             }
+            _canPlaySmileOnTap = false;
+            _isTransientMotionPlaying = true;
+            const isStudy = _currentCharacterState === 'study';
+            const randomTapMotion = Math.random() < 0.5 ? 'Smile' : 'Talk';
+            const tapMotion = isStudy ? 'Angry' : randomTapMotion;
+            const recoverDelay =
+                tapMotion === 'Angry'
+                    ? ANGRY_MOTION_DURATION_MS
+                    : (tapMotion === 'Talk' ? TALK_MOTION_DURATION_MS : SMILE_MOTION_DURATION_MS);
+
+            updateStatus(`Model clicked! Trigger ${tapMotion}`);
+            playMotionByName(tapMotion, 0);
+            setTimeout(() => {
+                _canPlaySmileOnTap = true;
+                _isTransientMotionPlaying = false;
+                flushQueuedCharacterState();
+            }, recoverDelay);
+        }
+
+        function flushQueuedCharacterState() {
+            if (_isTransientMotionPlaying || !model) {
+                return;
+            }
+
+            const next = _pendingCharacterState || _currentCharacterState;
+            _pendingCharacterState = null;
+
+            // Wait one frame before restoring base loop to avoid visible snap at transient end.
+            requestAnimationFrame(() => {
+                if (_isTransientMotionPlaying || !model) {
+                    return;
+                }
+                if (next === 'study') {
+                    playMotionByName('Study', 0);
+                } else {
+                    playMotionByName('Normal', 0);
+                }
+            });
         }
 
         // Preload textures and register in PIXI Assets system
@@ -423,25 +638,22 @@
             console.log('[Preload] Using Flutter-injected textures...');
 
             if (!window._preloadedTextures) {
-                throw new Error('No preloaded textures from Flutter!');
+                console.warn('[Preload] No preloaded textures object from Flutter, fallback to runtime loading');
+                return;
             }
 
-            const textureUrls = [
-                'https://appassets.androidplatform.net/assets/live2d/hiyori/Hiyori.2048/texture_00.png',
-                'https://appassets.androidplatform.net/assets/live2d/hiyori/Hiyori.2048/texture_01.png'
-            ];
+            const textureEntries = Object.entries(window._preloadedTextures)
+                .filter(([_, dataUrl]) => typeof dataUrl === 'string' && dataUrl.startsWith('data:image'));
 
-            const textureKeys = ['texture_00', 'texture_01'];
+            if (textureEntries.length === 0) {
+                console.warn('[Preload] No valid preloaded textures, fallback to runtime loading');
+                return;
+            }
 
-            for (let i = 0; i < textureUrls.length; i++) {
-                const url = textureUrls[i];
-                const dataUrl = window._preloadedTextures[textureKeys[i]];
+            for (const [textureKey, dataUrl] of textureEntries) {
+                const url = resolveModelAssetUrl(`hiyori_movie_pro_t03.4096/${textureKey}.png`);
 
-                if (!dataUrl) {
-                    throw new Error(`Missing texture: ${textureKeys[i]}`);
-                }
-
-                console.log('[Preload] Loading', textureKeys[i], 'from data URL...');
+                console.log('[Preload] Loading', textureKey, 'from data URL...');
 
                 // Create image from data URL
                 const img = new Image();
@@ -460,14 +672,11 @@
 
                 // Register in PIXI Assets cache with all possible URL formats
                 PIXI.Assets.cache.set(url, texture);
-                // Also register relative path variations
-                const relativePath = url.split('/hiyori/')[1];
-                if (relativePath) {
-                    PIXI.Assets.cache.set(relativePath, texture);
-                    const fileName = relativePath.split('/').pop();
-                    PIXI.Assets.cache.set(fileName, texture);
-                    PIXI.Assets.cache.set('Hiyori.2048/' + fileName, texture);
-                }
+                // Also register relative path and file-name variations.
+                const fileName = `${textureKey}.png`;
+                const relativePath = `hiyori_movie_pro_t03.4096/${fileName}`;
+                PIXI.Assets.cache.set(relativePath, texture);
+                PIXI.Assets.cache.set(fileName, texture);
 
                 console.log('[Preload] Texture registered:', url);
             }
@@ -533,7 +742,7 @@
                     preserveDrawingBuffer: false,
                     powerPreference: 'high-performance'
                 });
-                
+
                 // 确保 canvas 元素完全透明
                 const canvas = document.getElementById('canvas');
                 if (canvas) {
@@ -557,8 +766,7 @@
                 updateStatus('Creating Live2D model...');
 
                 // Pre-load model JSON, inject textures, then load from blob URL
-                const modelUrl = 'https://appassets.androidplatform.net/assets/live2d/hiyori/Hiyori.model3.json';
-                const modelBaseUrl = 'https://appassets.androidplatform.net/assets/live2d/hiyori/';
+                const modelUrl = resolveModelAssetUrl('hiyori_movie_pro_t03.model3.json');
                 updateStatus(`Loading model: ${modelUrl}`);
 
                 try {
@@ -576,28 +784,72 @@
                         modelJson.FileReferences.Textures = textures.map((t) => {
                             const fileName = String(t || '').split('/').pop();
                             const key = fileName?.replace('.png', '') || '';
-                            return window._preloadedTextures[key] || (modelBaseUrl + t);
+                            return window._preloadedTextures[key] || toAbsoluteModelPath(t);
                         });
                     }
 
                     // Convert all relative paths to absolute URLs
-                    ['Moc', 'Pose', 'UserData', 'Physics'].forEach(key => {
-                        if (modelJson?.FileReferences?.[key] && !modelJson.FileReferences[key].startsWith('http')) {
-                            modelJson.FileReferences[key] = modelBaseUrl + modelJson.FileReferences[key];
+                    ['Moc', 'Pose', 'UserData', 'Physics', 'DisplayInfo'].forEach(key => {
+                        if (modelJson?.FileReferences?.[key]) {
+                            modelJson.FileReferences[key] = toAbsoluteModelPath(modelJson.FileReferences[key]);
                         }
                     });
 
+                    if (Array.isArray(modelJson?.FileReferences?.Expressions)) {
+                        modelJson.FileReferences.Expressions = modelJson.FileReferences.Expressions.map((expr) => {
+                            if (expr?.File) {
+                                return { ...expr, File: toAbsoluteModelPath(expr.File) };
+                            }
+                            return expr;
+                        });
+                    }
+
                     // Handle motions
                     if (modelJson?.FileReferences?.Motions) {
-                        Object.entries(modelJson.FileReferences.Motions).forEach(([group, motions]) => {
-                            if (Array.isArray(motions)) {
-                                motions.forEach((motion, idx) => {
-                                    if (motion?.File && !motion.File.startsWith('http')) {
-                                        motions[idx].File = modelBaseUrl + motion.File;
-                                    }
-                                });
-                            }
+                        // Build a case-insensitive group name map to avoid mismatch between code and model json.
+                        _motionGroupNameMap = {};
+                        Object.keys(modelJson.FileReferences.Motions).forEach((name) => {
+                            _motionGroupNameMap[String(name).toLowerCase()] = name;
                         });
+
+                        for (const [group, motions] of Object.entries(modelJson.FileReferences.Motions)) {
+                            if (!Array.isArray(motions)) {
+                                continue;
+                            }
+
+                            for (let idx = 0; idx < motions.length; idx++) {
+                                const motion = motions[idx];
+                                if (!motion?.File) {
+                                    continue;
+                                }
+
+                                const original = motion.File;
+                                const absoluteUrl = toAbsoluteModelPath(original);
+
+                                // Android WebView 对 blob: motion URL 存在拦截问题，
+                                // 这里保持为 appassets 绝对路径，并做一次预读验证可达性。
+                                try {
+                                    const motionResponse = await xhrFetch(absoluteUrl);
+                                    if (String(group).toLowerCase() === 'start' && idx === 0) {
+                                        try {
+                                            const motionText = await motionResponse.text();
+                                            const motionJson = JSON.parse(motionText);
+                                            const durationSec = Number(motionJson?.Meta?.Duration || 0);
+                                            if (Number.isFinite(durationSec) && durationSec > 0) {
+                                                _startMotionDurationMs = Math.min(Math.round(durationSec * 1000), 20000);
+                                            }
+                                            _startInitialParams = extractInitialParameterValuesFromMotion(motionJson);
+                                        } catch (e) {
+                                            console.warn('[Live2D] parse start motion failed:', e);
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.warn('[Live2D][MotionPreload] motion precheck failed:', absoluteUrl, e);
+                                }
+                                motions[idx].File = absoluteUrl;
+
+                            }
+                        }
                     }
 
                     console.log('[Live2D] Textures and paths injected');
@@ -623,15 +875,20 @@
                     throw error;
                 }
 
-                // 居中、缩放与垂直对齐逻辑封装并在 resize 时重用
+                // 使用外层容器承接全局平移，避免与模型内部动画位移互相干扰。
+                modelLayer = new PIXI.Container();
+                app.stage.addChild(modelLayer);
+                modelLayer.addChild(model);
+
+                // 只做缩放和水平居中；不干预纵向位移，交由动画自身控制
                 try {
                     function applyVerticalAlignment(w, h) {
                         try {
                             const width = Number(w || window.innerWidth);
                             const height = Number(h || window.innerHeight);
 
-                            // 基本缩放（调小以显示半身）
-                            model.scale.set(0.3);
+                            // 略微回调缩放，避免头部动画被遮盖
+                            model.scale.set(MODEL_SCALE);
 
                             // 计算并设置 pivot 为局部中心（使 position 成为可视中心）
                             try {
@@ -647,43 +904,30 @@
                                 console.warn('[Live2D] Failed to set pivot from local bounds', e);
                             }
 
-                            // 先基于局部高度计算偏移（更稳定）
-                            const localBounds2 = model.getLocalBounds();
-                            const localHeight = Number(localBounds2.height) || Number(model.height) || 0;
-                            const displayedHeight = localHeight * (model.scale?.y || model.scale || 1);
+                            // 模型本体保持原点，由外层容器统一做全局位移。
+                            model.position.x = 0;
+                            model.position.y = 0;
 
-                            // 向下移动的强度：调整以展示半身像
-                            const upwardRatio = 0.15;
-                            const offsetY = displayedHeight * upwardRatio;
-                            console.log('[Live2D] Centering model with upward offset:', { localHeight, displayedHeight, upwardRatio, offsetY });
+                            // 水平居中给外层容器
+                            if (modelLayer) {
+                                modelLayer.x = width / 2 + LAYER_OFFSET_X_PX + _externalOffsetX;
+                                modelLayer.y = Math.round(height * LAYER_BASE_Y_RATIO) + LAYER_OFFSET_Y_PX + _externalOffsetY;
 
-                            // 初始 position（相对于画布中心），先应用基于局部高度的偏移
-                            model.position.set(width / 2, height / 2 - offsetY);
-
-                            // 使用全局 bounds 做二次修正，确保模型顶部到达期望屏幕位置
-                            try {
-                                const globalBounds = model.getBounds();
-                                const desiredTop = Math.round(height * 0.35); // 把模型顶部移动到屏幕 55% 位置（进一步往下）
-                                const deltaY = desiredTop - (globalBounds.y || 0);
-                                console.log('[Live2D] Adjusting by global bounds:', { globalBounds, desiredTop, deltaY });
-                                // Apply primary adjustment
-                                model.position.y = (model.position.y || 0) + deltaY;
-                                // 如果仍然看起来偏低，应用额外的向上修正（基于模型显示高度）
-                                try {
-                                    const extraUp = Math.round(Math.max(50, (displayedHeight || 0) * 0.15));
-                                    console.log('[Live2D] Applying extra upward correction:', extraUp);
-                                    model.position.y = (model.position.y || 0) - extraUp;
-                                } catch (e) {
-                                    console.warn('[Live2D] extra upward correction failed', e);
+                                // Optional top clamp: disable to allow free upward movement.
+                                if (ENABLE_TOP_CLAMP && !_isTransientMotionPlaying) {
+                                    try {
+                                        const bounds = model.getBounds();
+                                        const topOverflow = SAFE_TOP_PADDING_PX - (Number(bounds?.y) || 0);
+                                        if (topOverflow > 0) {
+                                            // Soft clamp: avoid pinning Y completely so vertical offset still works.
+                                            modelLayer.y += Math.min(topOverflow, MAX_TOP_CLAMP_PX);
+                                        }
+                                    } catch (e) {
+                                        console.warn('[Live2D] top safe-area correction failed', e);
+                                    }
                                 }
-                            } catch (e) {
-                                console.warn('[Live2D] Global bounds adjustment failed', e);
                             }
 
-                            // 触发一次 debug 绘制更新
-                            setTimeout(() => {
-                                try { if (typeof drawDebugBounds === 'function') drawDebugBounds(); } catch(_){ }
-                            }, 60);
                         } catch (e) {
                             console.warn('[Live2D] applyVerticalAlignment failed', e);
                         }
@@ -691,8 +935,14 @@
 
                     // 执行一次对齐
                     applyVerticalAlignment(window.innerWidth, window.innerHeight);
+                    // WebView 初次进入时补做一次对齐。
+                    setTimeout(() => {
+                        if (!_isTransientMotionPlaying) {
+                            applyVerticalAlignment(window.innerWidth, window.innerHeight);
+                        }
+                    }, 200);
 
-                    // 在窗口 resize 时也应用相同的对齐逻辑（替代原先简单的居中）
+                    // 在窗口 resize 时仅做水平居中
                     window._applyVerticalAlignment = applyVerticalAlignment;
                 } catch (e) {
                     console.log('[Live2D] Error setting model properties:', e.message);
@@ -702,121 +952,40 @@
                 model.eventMode = 'static';
                 model.cursor = 'pointer';
 
-                app.stage.addChild(model);
+                // 开屏修复：先写入 Start 首帧参数，再可见并播放 Start，避免首帧闪到默认姿态。
+                model.alpha = 0;
+                _isTransientMotionPlaying = true;
 
-                // --- DEBUG HELPERS: draw model bounds and log textures ---
-                try {
-                    // Ensure stage sortable so overlays appear above model
-                    app.stage.sortableChildren = true;
-
-                    // Log internal texture info if available
-                    if (model.internalModel && model.internalModel.textures) {
-                        console.log('[Live2D] Model has', model.internalModel.textures.length, 'textures');
-                        model.internalModel.textures.forEach((tex, i) => {
-                            try {
-                                console.log(`[Live2D] Texture ${i}:`, tex && tex.width, 'x', tex && tex.height, 'valid:', tex && tex.valid);
-                            } catch (e) {
-                                console.log('[Live2D] Texture log error', e);
-                            }
-                        });
-                    } else {
-                        console.log('[Live2D] No internal textures information available');
-                    }
-
-                    // Attempt to get bounds and draw a visible rectangle around the model
-                    const drawDebugBounds = () => {
-                        try {
-                            const bounds = model.getBounds();
-                            // Print a full JSON representation for easier reading
-                            try {
-                                console.log('[Live2D] Model getBounds (json):', JSON.stringify(bounds));
-                            } catch (e) {
-                                console.log('[Live2D] Model getBounds (obj):', bounds);
-                            }
-
-                            // Also log more model metrics
-                            try {
-                                console.log('[Live2D] model.position:', model.position.x, model.position.y);
-                                console.log('[Live2D] model.width/height:', model.width, model.height);
-                                console.log('[Live2D] model.getLocalBounds():', model.getLocalBounds());
-                            } catch (e) {
-                                console.warn('[Live2D] model metric log failed', e);
-                            }
-
-                            // Remove previous debug if exists
-                            if (app.stage._debugBox) {
-                                try { app.stage.removeChild(app.stage._debugBox); app.stage._debugBox.destroy({ children: true }); } catch (_) { }
-                            }
-
-                            const g = new PIXI.Graphics();
-                            g.lineStyle(4, 0xff0000, 0.9);
-                            g.beginFill(0xff0000, 0.05);
-                            const x = Number(bounds.x) || 0;
-                            const y = Number(bounds.y) || 0;
-                            const w = Number(bounds.width) || (model.width || 0);
-                            const h = Number(bounds.height) || (model.height || 0);
-                            g.drawRect(x, y, w, h);
-                            g.endFill();
-                            g.zIndex = 1000;
-                            app.stage.addChild(g);
-                            app.stage._debugBox = g;
-
-                            // Draw a small green marker at model.position for visual center
-                            if (app.stage._debugMarker) {
-                                try { app.stage.removeChild(app.stage._debugMarker); app.stage._debugMarker.destroy({ children: true }); } catch (_) { }
-                            }
-                            const m = new PIXI.Graphics();
-                            m.beginFill(0x00ff00, 1);
-                            m.drawCircle(model.position.x, model.position.y, 8);
-                            m.endFill();
-                            m.zIndex = 1001;
-                            app.stage.addChild(m);
-                            app.stage._debugMarker = m;
-                        } catch (e) {
-                            console.warn('[Live2D] drawDebugBounds failed', e);
-                        }
-                    };
-
-                    // Draw immediately and again after a short delay (some resources finalize later)
-                    drawDebugBounds();
-                    setTimeout(drawDebugBounds, 500);
-                } catch (e) {
-                    console.warn('[Live2D] Debug helper failed', e);
+                const preApplied = applyStartInitialPoseToModel();
+                if (preApplied) {
+                    updateStatus('[Init] Start first-frame parameters pre-applied');
                 }
 
-                // Debug: Check if model is actually visible
-                console.log('[Live2D] Model added to stage');
-                console.log('[Live2D] Model position:', model.position.x, model.position.y);
-                console.log('[Live2D] Model visible:', model.visible);
-                console.log('[Live2D] Model alpha:', model.alpha);
-                console.log('[Live2D] Model scale:', model.scale.x, model.scale.y);
-                console.log('[Live2D] Stage children:', app.stage.children.length);
-
-                // Check textures
-                if (model.internalModel && model.internalModel.textures) {
-                    console.log('[Live2D] Model has', model.internalModel.textures.length, 'textures');
-                    model.internalModel.textures.forEach((tex, i) => {
-                        console.log(`[Live2D] Texture ${i}:`, tex.width, 'x', tex.height, 'valid:', tex.valid);
-                    });
+                postBridgeMessage('entrance_motion_started');
+                const startPlayed = await playMotionByName('Start', 0);
+                if (!startPlayed) {
+                    updateStatus('[Init] Start motion unavailable, fallback to state motion');
                 }
 
-                // Play idle motion if available
-                if (model.motion) {
-                    model.motion('Idle');
-                } else if (model.internalModel?.motionManager) {
-                    model.internalModel.motionManager.startMotion('Idle', 0, 3);
-                }
+                await new Promise((resolve) => requestAnimationFrame(resolve));
+                model.alpha = 1;
+
+                await new Promise((resolve) => setTimeout(resolve, startPlayed ? _startMotionDurationMs : 0));
+                _isTransientMotionPlaying = false;
+                flushQueuedCharacterState();
 
                 updateStatus('✅ Live2D ready! Model is visible on screen.');
+                postBridgeMessage('ready');
 
-                // Tap interaction
-                model.on('pointertap', () => {
-                    updateStatus('Model clicked!');
-                    if (model.motion) {
-                        model.motion('TapBody');
-                    } else if (model.internalModel?.motionManager) {
-                        model.internalModel.motionManager.startMotion('TapBody', 0, 3);
+                // Tap interaction - only on the Live2D model itself
+                model.on('pointertap', (event) => {
+                    if (!isPointerWithinTapZone(event)) {
+                        return;
                     }
+
+                    updateStatus('Model clicked!');
+                    postBridgeMessage('character_tap');
+                    triggerSmileMotion();
                 });
 
             } catch (error) {
@@ -829,15 +998,118 @@
         function playMotion(motionName) {
             if (!model) return;
             if (model.motion) {
-                model.motion(motionName);
+                model.motion(motionName, 0, MOTION_PRIORITY_FORCE);
                 updateStatus(`Play motion: ${motionName}`);
             } else if (model.internalModel?.motionManager) {
-                model.internalModel.motionManager.startMotion(motionName, 0, 3);
+                model.internalModel.motionManager.startMotion(motionName, 0, MOTION_PRIORITY_FORCE);
                 updateStatus(`Play motion: ${motionName}`);
             } else {
                 updateStatus('Motion control not supported');
             }
         }
+
+        async function playMotionByName(group, index = 0) {
+            if (!model) return false;
+
+            const resolvedGroup = resolveMotionGroupName(group);
+            const isBaseStateMotion = resolvedGroup === 'Normal' || resolvedGroup === 'Study';
+            const motionPriority = isBaseStateMotion ? MOTION_PRIORITY_BASE : MOTION_PRIORITY_FORCE;
+
+            // Only hard-cut transient motions. Base state restore should be softer.
+            if (!isBaseStateMotion) {
+                try {
+                    if (model.internalModel?.motionManager?.stopAllMotions) {
+                        model.internalModel.motionManager.stopAllMotions();
+                    }
+                } catch (_) { }
+            }
+
+            let played = false;
+
+            try {
+                if (model.internalModel?.motionManager?.startMotion) {
+                    const result = model.internalModel.motionManager.startMotion(
+                        resolvedGroup,
+                        index,
+                        motionPriority
+                    );
+                    const resolved = result instanceof Promise ? await result : result;
+                    played = resolved !== false;
+                }
+            } catch (e) {
+                console.warn('[Live2D] startMotion failed:', e);
+            }
+
+            if (!played && model.motion) {
+                try {
+                    const highResult = model.motion(resolvedGroup, index, motionPriority);
+                    const resolvedHigh = highResult instanceof Promise ? await highResult : highResult;
+                    played = resolvedHigh !== false;
+                } catch (_) {
+                    try {
+                        const fallback = model.motion(resolvedGroup);
+                        const resolvedFallback = fallback instanceof Promise ? await fallback : fallback;
+                        played = resolvedFallback !== false;
+                    } catch (e) {
+                        console.warn('[Live2D] model.motion failed:', e);
+                    }
+                }
+            }
+
+            // Base state motion may be rejected at low priority in some runtime states.
+            // Retry once with force priority to keep state switching reliable.
+            if (!played && isBaseStateMotion) {
+                try {
+                    if (model.internalModel?.motionManager?.startMotion) {
+                        const forceResult = model.internalModel.motionManager.startMotion(
+                            resolvedGroup,
+                            index,
+                            MOTION_PRIORITY_FORCE
+                        );
+                        const resolvedForce = forceResult instanceof Promise ? await forceResult : forceResult;
+                        played = resolvedForce !== false;
+                    }
+                } catch (e) {
+                    console.warn('[Live2D] base motion force retry failed:', e);
+                }
+
+                if (!played && model.motion) {
+                    try {
+                        const forceHighResult = model.motion(resolvedGroup, index, MOTION_PRIORITY_FORCE);
+                        const resolvedForceHigh = forceHighResult instanceof Promise ? await forceHighResult : forceHighResult;
+                        played = resolvedForceHigh !== false;
+                    } catch (e) {
+                        console.warn('[Live2D] base motion force retry via model.motion failed:', e);
+                    }
+                }
+            }
+
+            updateStatus(`[Motion] ${resolvedGroup}[${index}] -> ${played ? 'ok' : 'fail'}`);
+            return played;
+        }
+
+        function setCharacterState(state) {
+            const next = String(state || 'normal').toLowerCase();
+            _currentCharacterState = next;
+
+            if (!model) {
+                _pendingCharacterState = next;
+                return;
+            }
+
+            if (_isTransientMotionPlaying) {
+                _pendingCharacterState = next;
+                updateStatus(`[State] queued -> ${next}`);
+                return;
+            }
+
+            _pendingCharacterState = null;
+            flushQueuedCharacterState();
+        }
+
+        window.setCharacterState = setCharacterState;
+        window.playMotionByName = playMotionByName;
+
 
         function changeExpression(exprName) {
             if (!model) return;
@@ -881,6 +1153,7 @@
                 try { window._applyVerticalAlignment(window.innerWidth, window.innerHeight); } catch (e) { console.warn('resize alignment failed', e); }
             }
         });
+
     </script>
 </body>
 

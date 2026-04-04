@@ -82,6 +82,46 @@ void main() {
       expect(audio.playStartSfxCalls, 1);
     });
 
+    test('routes semantic ui open/back events to button sfx', () async {
+      await controller.triggerUiOpenSfx();
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      await controller.triggerUiBackSfx();
+
+      expect(audio.playButtonOpenSfxCalls, 1);
+      expect(audio.playButtonBackSfxCalls, 1);
+    });
+
+    test('deduplicates rapid repeated ui sfx of same type', () async {
+      await controller.triggerUiOpenSfx();
+      await controller.triggerUiOpenSfx();
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      await controller.triggerUiBackSfx();
+      await controller.triggerUiBackSfx();
+
+      expect(audio.playButtonOpenSfxCalls, 1);
+      expect(audio.playButtonBackSfxCalls, 1);
+    });
+
+    test('deduplicates rapid repeated ui sfx across different types', () async {
+      await controller.triggerUiOpenSfx();
+      await controller.triggerUiBackSfx();
+
+      expect(audio.playButtonOpenSfxCalls, 1);
+      expect(audio.playButtonBackSfxCalls, 0);
+    });
+
+    test('ui button sfx failures are non-blocking', () async {
+      audio.playButtonOpenSfxResult = false;
+      audio.playButtonBackSfxResult = false;
+
+      await controller.triggerUiOpenSfx();
+      await controller.triggerUiBackSfx();
+
+      controller.startTimer();
+      controller.pauseTimer();
+      expect(controller.phaseStatus.value, PomodoroPhaseStatus.paused);
+    });
+
     test('audio failure does not block timer transition methods', () async {
       audio.playBgmResult = false;
       await controller.playOrPauseMusic();

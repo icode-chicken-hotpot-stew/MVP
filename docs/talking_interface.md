@@ -151,7 +151,7 @@
 
 - “对话系统尚未实现”
 - “对话资源路径未冻结”
-- “仅有 `remainingSeconds/isActive/...` 四个基础状态”
+- “番茄钟当前仍只有 `remainingSeconds / isActive / isDrawerOpen / currentDate` 四个基础状态”
 
 如与旧文档冲突，以以下文件为准：
 

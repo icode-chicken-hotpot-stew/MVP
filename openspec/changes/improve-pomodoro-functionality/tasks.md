@@ -29,7 +29,7 @@
 
 - [x] 4.1 Remove the formal dependency on `_fakeTimer`, `_fakeProgress`, and `_resetFakeProgress()` in `lib/ui_widgets.dart`
 - [x] 4.2 Change the top progress indicator to derive progress from controller state and the current phase duration instead of `_fakeProgress`, including the ready-state special case that uses focus duration with zero progress
-- [x] 4.3 Replace the current play/pause-toggle interaction with explicit start, pause, and reset controls driven by controller methods and derive phase labels from `pomodoroState + phaseStatus`
+- [ ] 4.3 Replace the current play/pause-toggle interaction with explicit start, pause, and reset controls driven by controller methods and derive phase labels from `pomodoroState + phaseStatus`
 - [x] 4.4 Add three frontend inputs for focus duration, rest duration, and cycle count, wired only to controller configuration methods
 - [x] 4.5 Ensure `lib/main.dart` triggers controller initialization early enough that restored state is available before normal UI interaction
 - [x] 4.6 Keep UI-side semantics aligned with the frozen contract: `pomodoroState` drives companion/animation semantics, while `phaseStatus` drives control/button/recovery semantics

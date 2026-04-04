@@ -160,8 +160,8 @@ class LocalSupervisorNotificationService
 
       await _plugin.zonedSchedule(
         _stage3mNotificationId,
-        '专注监管提醒',
-        '你已经离开专注界面 3 分钟了，记得回来继续学习。',
+        '专注提醒',
+        '你已经离开专注界面 5 分钟了，诶......你去哪里了？',
         tz.TZDateTime.from(stage3At.toUtc(), tz.UTC),
         NotificationDetails(
           android: AndroidNotificationDetails(
@@ -178,8 +178,8 @@ class LocalSupervisorNotificationService
 
       await _plugin.zonedSchedule(
         _stage6mNotificationId,
-        '专注监管提醒',
-        '你已经离开专注界面 6 分钟了，监督员在等你回到学习状态。',
+        '专！注！提！醒！',
+        '你已经离开专注界面 10 分钟了，是时候回到学习状态了哦！',
         tz.TZDateTime.from(stage6At.toUtc(), tz.UTC),
         NotificationDetails(
           android: AndroidNotificationDetails(

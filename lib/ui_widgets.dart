@@ -49,7 +49,7 @@ class _UIWidgetsState extends State<UIWidgets> {
     super.dispose();
   }
 
-  double get _currentProgress {
+  double get _elapsedProgress {
     final int total = widget.controller.currentPhaseDurationSeconds;
     if (total <= 0) {
       return 0;
@@ -460,29 +460,35 @@ class _UIWidgetsState extends State<UIWidgets> {
                     Stack(
                       alignment: Alignment.center,
                       children: [
-                        ValueListenableBuilder<PomodoroState>(
-                          valueListenable: widget.controller.pomodoroState,
-                          builder: (context, state, _) {
+                        ListenableBuilder(
+                          listenable: Listenable.merge([
+                            widget.controller.remainingSeconds,
+                            widget.controller.pomodoroState,
+                            widget.controller.phaseStatus,
+                          ]),
+                          builder: (context, _) {
+                            final PomodoroState state =
+                                widget.controller.pomodoroState.value;
+
                             // 点击展开时如果处于 ready（未开始），按产品期望显示为专注模式（红色）。
                             final bool isStudying =
                                 state == PomodoroState.studying ||
                                 widget.controller.phaseStatus.value ==
                                     PomodoroPhaseStatus.ready;
 
-                            // 对于专注阶段，进度条按“已流逝比例”增长（从空到满）；
-                            // 对于休息阶段，进度条按“剩余比例”减少（从满到空）。
-                            // 统一使用剩余比例显示进度（无论专注或休息，都是从满到空）
-                            final double progressValue = _currentProgress.clamp(
+                            // 环形条采用“已流逝=浅色、剩余=深色”视觉语义：
+                            // 已流逝部分会沿顺时针逐步增大，从而呈现深色圈被持续消耗。
+                            final double progressValue = _elapsedProgress.clamp(
                               0.0,
                               1.0,
                             );
 
                             final Color progressColor = isStudying
-                                ? Colors.redAccent
-                                : Colors.green;
-                            final Color backgroundColor = isStudying
                                 ? Colors.red.shade100
                                 : Colors.green.shade100;
+                            final Color backgroundColor = isStudying
+                                ? Colors.red.shade700
+                                : Colors.green.shade700;
 
                             return SizedBox(
                               width: 70,

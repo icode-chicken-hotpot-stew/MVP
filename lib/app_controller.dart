@@ -10,6 +10,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const int kDefaultPomodoroSeconds = 1500;
 const int kDefaultRestSeconds = 300;
+const int kMinFocusDurationMinutes = 5;
+const int kMaxFocusDurationMinutes = 300;
+const int kMinRestDurationMinutes = 1;
+const int kMaxRestDurationMinutes = 300;
+const int kMaxPomodoroCycleCount = 100;
 const int kDailyXpCap = 2000;
 const int kDefaultColdStartDialogueDelaySeconds = 5;
 const Duration kIdleDialogueTimeout = Duration(seconds: 60);
@@ -373,11 +378,11 @@ class AppController extends ChangeNotifier {
       _applySnapshot(readySnapshot, startTickerIfRunning: false);
       await _persistSnapshot(readySnapshot);
     } else {
-      final int restoredFocus = _sanitizeDurationOrDefault(
+      final int restoredFocus = _sanitizeFocusDurationOrDefault(
         snapshot.focusDurationSeconds,
         kDefaultPomodoroSeconds,
       );
-      final int restoredRest = _sanitizeDurationOrDefault(
+      final int restoredRest = _sanitizeRestDurationOrDefault(
         snapshot.restDurationSeconds,
         kDefaultRestSeconds,
       );
@@ -610,7 +615,7 @@ class AppController extends ChangeNotifier {
   void updateFocusDuration(int seconds) {
     registerUserInteraction();
 
-    if (!_isValidDuration(seconds)) {
+    if (!_isValidFocusDuration(seconds)) {
       return;
     }
     if (focusDurationSeconds.value == seconds) {
@@ -631,7 +636,7 @@ class AppController extends ChangeNotifier {
   void updateRestDuration(int seconds) {
     registerUserInteraction();
 
-    if (!_isValidDuration(seconds)) {
+    if (!_isValidRestDuration(seconds)) {
       return;
     }
     if (restDurationSeconds.value == seconds) {
@@ -1059,11 +1064,14 @@ class AppController extends ChangeNotifier {
           : null,
       phaseDurationSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
-          : _sanitizeDurationOrDefault(
+          : snapshot.pomodoroState == PomodoroState.studying
+          ? _sanitizeFocusDurationOrDefault(
               snapshot.phaseDurationSeconds,
-              snapshot.pomodoroState == PomodoroState.studying
-                  ? focusSeconds
-                  : restSeconds,
+              focusSeconds,
+            )
+          : _sanitizeRestDurationOrDefault(
+              snapshot.phaseDurationSeconds,
+              restSeconds,
             ),
       remainingSeconds: snapshot.phaseStatus == PomodoroPhaseStatus.ready
           ? focusSeconds
@@ -1072,11 +1080,14 @@ class AppController extends ChangeNotifier {
               phaseDurationSeconds:
                   snapshot.phaseStatus == PomodoroPhaseStatus.ready
                   ? focusSeconds
-                  : _sanitizeDurationOrDefault(
+                  : snapshot.pomodoroState == PomodoroState.studying
+                  ? _sanitizeFocusDurationOrDefault(
                       snapshot.phaseDurationSeconds,
-                      snapshot.pomodoroState == PomodoroState.studying
-                          ? focusSeconds
-                          : restSeconds,
+                      focusSeconds,
+                    )
+                  : _sanitizeRestDurationOrDefault(
+                      snapshot.phaseDurationSeconds,
+                      restSeconds,
                     ),
               fallback: snapshot.pomodoroState == PomodoroState.studying
                   ? focusSeconds
@@ -1899,18 +1910,31 @@ class AppController extends ChangeNotifier {
     return remaining;
   }
 
-  bool _isValidDuration(int seconds) => seconds > 0;
-
-  int _sanitizeDurationOrDefault(int seconds, int fallback) {
-    return _isValidDuration(seconds) ? seconds : fallback;
+  bool _isValidFocusDuration(int seconds) {
+    return seconds >= kMinFocusDurationMinutes * 60 &&
+        seconds <= kMaxFocusDurationMinutes * 60;
   }
+
+  bool _isValidRestDuration(int seconds) {
+    return seconds >= kMinRestDurationMinutes * 60 &&
+        seconds <= kMaxRestDurationMinutes * 60;
+  }
+
+  int _sanitizeFocusDurationOrDefault(int seconds, int fallback) {
+    return _isValidFocusDuration(seconds) ? seconds : fallback;
+  }
+
+  int _sanitizeRestDurationOrDefault(int seconds, int fallback) {
+    return _isValidRestDuration(seconds) ? seconds : fallback;
+  }
+
 
   int _sanitizeRemainingSeconds({
     required int seconds,
     required int phaseDurationSeconds,
     required int fallback,
   }) {
-    if (!_isValidDuration(seconds)) {
+    if (seconds <= 0) {
       return fallback;
     }
     if (seconds > phaseDurationSeconds) {
@@ -1923,7 +1947,7 @@ class AppController extends ChangeNotifier {
     if (count == null) {
       return null;
     }
-    if (count <= 0) {
+    if (count <= 0 || count > kMaxPomodoroCycleCount) {
       return null;
     }
     return count;

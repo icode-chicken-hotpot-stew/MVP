@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 
@@ -148,23 +147,48 @@ class _UIWidgetsState extends State<UIWidgets> {
 
   void _changeFocusMinutes(int delta) {
     final int current = widget.controller.focusDurationSeconds.value ~/ 60;
-    final int updated = max(1, current + delta);
+    final int updated = current + delta;
+    if (updated < kMinFocusDurationMinutes ||
+        updated > kMaxFocusDurationMinutes) {
+      return;
+    }
     widget.controller.updateFocusDuration(updated * 60);
     _focusMinutesController.text = updated.toString();
   }
 
+  void _setFocusMinutesToMinimum() {
+    widget.controller.updateFocusDuration(kMinFocusDurationMinutes * 60);
+    _focusMinutesController.text = kMinFocusDurationMinutes.toString();
+  }
+
   void _changeRestMinutes(int delta) {
     final int current = widget.controller.restDurationSeconds.value ~/ 60;
-    final int updated = max(1, current + delta);
+    final int updated = current + delta;
+    if (updated < kMinRestDurationMinutes || updated > kMaxRestDurationMinutes) {
+      return;
+    }
     widget.controller.updateRestDuration(updated * 60);
     _restMinutesController.text = updated.toString();
   }
 
+  void _setRestMinutesToMinimum() {
+    widget.controller.updateRestDuration(kMinRestDurationMinutes * 60);
+    _restMinutesController.text = kMinRestDurationMinutes.toString();
+  }
+
   void _changeCycleCount(int delta) {
     final int current = widget.controller.cycleCount.value ?? 0;
-    final int updated = max(0, current + delta);
+    final int updated = current + delta;
+    if (updated < 0 || updated > kMaxPomodoroCycleCount) {
+      return;
+    }
     widget.controller.updateCycleCount(updated == 0 ? null : updated);
     _cycleCountController.text = updated.toString();
+  }
+
+  void _setCycleCountToZero() {
+    widget.controller.updateCycleCount(null);
+    _cycleCountController.text = '0';
   }
 
   Widget _buildAdjustRow({
@@ -172,6 +196,7 @@ class _UIWidgetsState extends State<UIWidgets> {
     required int value,
     required VoidCallback onIncrease,
     required VoidCallback onDecrease,
+    required VoidCallback onDecreaseLongPress,
     required VoidCallback onSuperIncrease,
   }) {
     return Container(
@@ -220,6 +245,7 @@ class _UIWidgetsState extends State<UIWidgets> {
             height: 28,
             child: IconButton(
               onPressed: onDecrease,
+              onLongPress: onDecreaseLongPress,
               icon: const Icon(Icons.remove, size: 16),
               color: const Color(0xFF6D4C41),
               padding: EdgeInsets.zero,
@@ -628,6 +654,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                                                 _changeFocusMinutes(1),
                                             onDecrease: () =>
                                                 _changeFocusMinutes(-1),
+                                            onDecreaseLongPress: () =>
+                                                _setFocusMinutesToMinimum(),
                                             onSuperIncrease: () =>
                                                 _changeFocusMinutes(10),
                                           ),
@@ -644,6 +672,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                                                 _changeRestMinutes(1),
                                             onDecrease: () =>
                                                 _changeRestMinutes(-1),
+                                            onDecreaseLongPress: () =>
+                                                _setRestMinutesToMinimum(),
                                             onSuperIncrease: () =>
                                                 _changeRestMinutes(10),
                                           ),
@@ -660,6 +690,8 @@ class _UIWidgetsState extends State<UIWidgets> {
                                                 _changeCycleCount(1),
                                             onDecrease: () =>
                                                 _changeCycleCount(-1),
+                                            onDecreaseLongPress: () =>
+                                                _setCycleCountToZero(),
                                             onSuperIncrease: () =>
                                                 _changeCycleCount(10),
                                           ),
